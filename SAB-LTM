@@ -1,0 +1,1340 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local userId = player.UserId
+
+-- Cursed Hub Style Colors
+local C = {
+	Window = Color3.fromRGB(5, 5, 7),
+	Row = Color3.fromRGB(14, 14, 18),
+	Control = Color3.fromRGB(28, 28, 35),
+	Log = Color3.fromRGB(9, 9, 13),
+	Border = Color3.fromRGB(210, 35, 55),
+	White = Color3.fromRGB(235, 235, 235),
+	Text = Color3.fromRGB(235, 235, 235),
+	Dim = Color3.fromRGB(90, 90, 100),
+	Accent = Color3.fromRGB(210, 35, 55),
+	Green = Color3.fromRGB(0, 255, 128),
+	Red = Color3.fromRGB(210, 35, 55),
+	Stroke = Color3.fromRGB(60, 10, 18),
+	Hover = Color3.fromRGB(22, 22, 28),
+	Input = Color3.fromRGB(10, 10, 14),
+	RedDim = Color3.fromRGB(120, 20, 30),
+	StrokeInput = Color3.fromRGB(30, 30, 38),
+	ToggleOn = Color3.fromRGB(90, 8, 16),
+}
+
+local function addCorner(parent, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = parent
+	return c
+end
+
+local function addStroke(parent, color, thickness)
+	local s = Instance.new("UIStroke")
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Color = color
+	s.Thickness = thickness or 1
+	s.Transparency = 0
+	s.Parent = parent
+	return s
+end
+
+-- Settings Variables
+local autoRefreshEnabled = true
+local autoRefreshInterval = 2 -- Default: 2 seconds (Max: 10 seconds)
+local fastGrabEnabled = false
+local showEggPriceEnabled = false
+local getXpEnabled = false
+
+-- Custom Jump Count Setting
+local customJumpCount = 0
+local jumpAttributeConnection = nil
+
+-- Custom Speed Setting
+local customWalkSpeed = 16
+local speedConnection = nil
+
+-- Blacklist Set (Stores blacklisted egg names as keys)
+local blacklistedEggs = {}
+
+-- Active connections for instant text updates
+local activeConnections = {}
+
+-- Forward Declarations for UI Refresh Functions
+local populateEggs
+local populateBlacklist
+
+-- 1. Main Teleport Parts Data
+local partsData = {
+	{name = "S", pos = Vector3.new(-422.8168029785156, 90.69515228271484, 0.3286857604980469)},
+	{name = "1", pos = Vector3.new(-419.7683410644531, 579.3984375, 3.361626625061035)},
+	{name = "2", pos = Vector3.new(-476.1354064941406, 2224.097412109375, 15.817705154418945)},
+	{name = "3", pos = Vector3.new(-449.6566467285156, 4021.4462890625, 49.378379821777344)},
+	{name = "4", pos = Vector3.new(-405.2480163574219, 6477.44482421875, 63.98550796508789)},
+	{name = "5", pos = Vector3.new(-409.8297424316406, 10278.2431640625, 68.83067321777344)},
+	{name = "6", pos = Vector3.new(-418.303466796875, 14215.5341796875, 83.19490051269531)},
+	{name = "7", pos = Vector3.new(-455.1311340332031, 19666.248046875, 82.00643920898438)}
+}
+
+-- Create folder for teleport parts in Workspace
+local folder = workspace:FindFirstChild("TeleportPartsFolder") or Instance.new("Folder")
+folder.Name = "TeleportPartsFolder"
+folder.Parent = workspace
+
+local createdParts = {}
+
+for _, data in ipairs(partsData) do
+	local part = folder:FindFirstChild(data.name) or Instance.new("Part")
+	part.Name = data.name
+	part.Position = data.pos
+	part.Anchored = true
+	part.Size = Vector3.new(10, 1, 10)
+	part.Parent = folder
+	table.insert(createdParts, part)
+end
+
+-- 2. Draggable UI System
+local function enableDragging(frame, titleBar)
+	local dragging = false
+	local dragInput, dragStart, startPos
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(
+			startPos.X.Scale, 
+			startPos.X.Offset + delta.X, 
+			startPos.Y.Scale, 
+			startPos.Y.Offset + delta.Y
+		)
+	end
+
+	titleBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	titleBar.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			update(input)
+		end
+	end)
+end
+
+-- 3. Base Location & Trampoline Detection System
+local function getPlayerBasePart()
+	local plotsFolder = workspace:FindFirstChild("Plots")
+	if not plotsFolder then return nil end
+
+	for _, plot in ipairs(plotsFolder:GetChildren()) do
+		if plot:GetAttribute("OwnerUserId") == userId then
+			local expansionFolder = plot:FindFirstChild("Expansion")
+			if expansionFolder then
+				for _, child in ipairs(expansionFolder:GetChildren()) do
+					if child.Name == "Post" and child:IsA("BasePart") then
+						return child
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function getPlayerTrampolineName()
+	local plotsFolder = workspace:FindFirstChild("Plots")
+	if not plotsFolder then return nil end
+
+	local playerOrder = nil
+	for _, plot in ipairs(plotsFolder:GetChildren()) do
+		if plot:GetAttribute("OwnerUserId") == userId then
+			playerOrder = plot:GetAttribute("Order")
+			break
+		end
+	end
+
+	if not playerOrder then return nil end
+
+	local mapFolder = workspace:FindFirstChild("Map")
+	if not mapFolder then return nil end
+	local baseTrampolines = mapFolder:FindFirstChild("BaseTrampolines")
+	if not baseTrampolines then return nil end
+
+	for _, tramp in ipairs(baseTrampolines:GetChildren()) do
+		if tramp:GetAttribute("BasePlotOrder") == playerOrder then
+			print("Detected Player Trampoline:", tramp.Name)
+			return tramp.Name
+		end
+	end
+
+	return nil
+end
+
+-- 4. Closest Part Calculation
+local function getClosestPartIndexToPosition(pos)
+	local closestIndex = 1
+	local shortestDistance = math.huge
+
+	for index, part in ipairs(createdParts) do
+		local distance = (pos - part.Position).Magnitude
+		if distance < shortestDistance then
+			shortestDistance = distance
+			closestIndex = index
+		end
+	end
+
+	return closestIndex
+end
+
+local function getClosestPartIndex()
+	local character = player.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then return 1 end
+	local idx = getClosestPartIndexToPosition(character.HumanoidRootPart.Position)
+	if createdParts[idx] then
+		print("Closest Teleport Part:", createdParts[idx].Name)
+	end
+	return idx
+end
+
+-- 5. Sequential Teleport System
+local isTeleporting = false
+
+local function teleportSequenceTo(targetIndex)
+	if isTeleporting then return end
+	isTeleporting = true
+
+	local character = player.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then 
+		isTeleporting = false
+		return 
+	end
+
+	local hrp = character.HumanoidRootPart
+	local startIndex = getClosestPartIndex()
+
+	if startIndex <= targetIndex then
+		for i = startIndex, targetIndex do
+			local targetPart = createdParts[i]
+			if targetPart then
+				hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+				task.wait(0.3)
+			end
+		end
+	else
+		for i = startIndex, targetIndex, -1 do
+			local targetPart = createdParts[i]
+			if targetPart then
+				hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+				task.wait(0.3)
+			end
+		end
+	end
+
+	isTeleporting = false
+end
+
+-- Teleport to Player Base
+local function teleportToBase()
+	local basePart = getPlayerBasePart()
+	if not basePart then
+		warn("[ERROR]: Base not found in Workspace.Plots!")
+		return
+	end
+
+	local character = player.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+	local hrp = character.HumanoidRootPart
+
+	teleportSequenceTo(1)
+	task.wait(0.3)
+	hrp.CFrame = basePart.CFrame + Vector3.new(0, 3, 0)
+end
+
+-- Teleport to Egg (75 Studs Offset)
+local function teleportToEgg(eggObject)
+	local character = player.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+	local hrp = character.HumanoidRootPart
+
+	local eggPosition
+	if eggObject:IsA("BasePart") then
+		eggPosition = eggObject.Position
+	elseif eggObject:IsA("Model") then
+		eggPosition = eggObject:GetPivot().Position
+	else
+		return
+	end
+
+	local closestIndexToEgg = getClosestPartIndexToPosition(eggPosition)
+	teleportSequenceTo(closestIndexToEgg)
+
+	task.wait(0.2)
+	local currentPart = createdParts[closestIndexToEgg]
+	if currentPart then
+		hrp.CFrame = currentPart.CFrame + Vector3.new(0, 75, 0)
+		task.wait(0.3)
+	end
+
+	hrp.CFrame = CFrame.new(eggPosition + Vector3.new(0, 3, 0))
+end
+
+-- Check Object Visibility
+local function isObjectVisible(obj)
+	if obj:IsA("BasePart") then
+		return obj.Transparency < 1
+	elseif obj:IsA("Model") then
+		for _, desc in ipairs(obj:GetDescendants()) do
+			if desc:IsA("BasePart") and desc.Transparency < 1 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- Check if Name ends strictly with 'Egg'
+local function nameEndsWithEgg(name)
+	local trimmedName = string.match(name, "^%s*(.-)%s*$")
+	return string.sub(trimmedName, -3) == "Egg"
+end
+
+-- Helper function to safely locate AnimalOverhead UI container inside egg models
+local function getAnimalOverhead(eggObj)
+	local fakeRoot = eggObj:FindFirstChild("FakeRootPart")
+	if not fakeRoot then return nil end
+	local hatAttach = fakeRoot:FindFirstChild("HatAttachment")
+	if not hatAttach then return nil end
+	local overheadAttach = hatAttach:FindFirstChild("OVERHEAD_ATTACHMENT")
+	if not overheadAttach then return nil end
+	return overheadAttach:FindFirstChild("AnimalOverhead")
+end
+
+-- Apply Fast Grab setting to an egg model
+local function applyFastGrab(eggObj)
+	if not fastGrabEnabled then return end
+	local rootPart = eggObj:FindFirstChild("RootPart")
+	if rootPart then
+		for _, desc in ipairs(rootPart:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") then
+				desc.HoldDuration = 0
+			end
+		end
+	end
+end
+
+-- Apply Price visibility to an egg model
+local function applyPriceVisibility(eggObj)
+	local animalOverhead = getAnimalOverhead(eggObj)
+	if animalOverhead then
+		local priceLabel = animalOverhead:FindFirstChild("Price")
+		if priceLabel and priceLabel:IsA("TextLabel") then
+			priceLabel.Visible = showEggPriceEnabled
+		end
+	end
+end
+
+-- Clear signal connections
+local function clearConnections()
+	for _, conn in ipairs(activeConnections) do
+		conn:Disconnect()
+	end
+	activeConnections = {}
+end
+
+-- Custom Jump Count Enforcer
+local function applyCustomJumpCount(num)
+	customJumpCount = num
+
+	-- Disconnect old connection if existing
+	if jumpAttributeConnection then
+		jumpAttributeConnection:Disconnect()
+		jumpAttributeConnection = nil
+	end
+
+	-- Set initial value
+	player:SetAttribute("ExtraJumps", customJumpCount)
+
+	-- Monitor changes and lock to the set value
+	jumpAttributeConnection = player:GetAttributeChangedSignal("ExtraJumps"):Connect(function()
+		if player:GetAttribute("ExtraJumps") ~= customJumpCount then
+			player:SetAttribute("ExtraJumps", customJumpCount)
+		end
+	end)
+end
+
+-- Custom Speed Enforcer
+local function applyCustomSpeed(speed)
+	customWalkSpeed = speed
+
+	if speedConnection then
+		speedConnection:Disconnect()
+		speedConnection = nil
+	end
+
+	local character = player.Character or player.CharacterAdded:Wait()
+	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid")
+
+	if humanoid then
+		humanoid.WalkSpeed = customWalkSpeed
+		speedConnection = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+			if humanoid.WalkSpeed ~= customWalkSpeed then
+				humanoid.WalkSpeed = customWalkSpeed
+			end
+		end)
+	end
+end
+
+-- Re-apply Speed on Character Respawn
+player.CharacterAdded:Connect(function(character)
+	task.wait(0.5)
+	if customWalkSpeed then
+		applyCustomSpeed(customWalkSpeed)
+	end
+end)
+
+-- 6. User Interface Creation
+local pGui = player:WaitForChild("PlayerGui")
+if pGui:FindFirstChild("TeleportGui") then pGui.TeleportGui:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TeleportGui"
+screenGui.Parent = pGui
+
+--- [ 1. Main Teleport Panel ] ---
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 200, 0, 420)
+mainFrame.Position = UDim2.new(0.02, 0, 0.3, 0)
+mainFrame.BackgroundColor3 = C.Window
+mainFrame.BorderSizePixel = 0
+addCorner(mainFrame, 12)
+addStroke(mainFrame, C.Stroke, 1.2)
+mainFrame.Parent = screenGui
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = C.Log
+titleBar.BorderSizePixel = 0
+addCorner(titleBar, 12)
+titleBar.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -30, 1, 0)
+titleLabel.Text = " Teleport Panel"
+titleLabel.TextColor3 = C.Border
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 1, 0)
+closeButton.Position = UDim2.new(1, -30, 0, 0)
+closeButton.Text = "X"
+closeButton.TextColor3 = C.Accent
+closeButton.Font = Enum.Font.GothamBold
+closeButton.BackgroundColor3 = C.RedDim
+closeButton.BorderSizePixel = 0
+addCorner(closeButton, 8)
+addStroke(closeButton, C.Stroke, 1)
+closeButton.Parent = titleBar
+closeButton.MouseButton1Click:Connect(function() mainFrame.Visible = false end)
+
+enableDragging(mainFrame, titleBar)
+
+local buttonsContainer = Instance.new("Frame")
+buttonsContainer.Size = UDim2.new(1, 0, 1, -30)
+buttonsContainer.Position = UDim2.new(0, 0, 0, 30)
+buttonsContainer.BackgroundTransparency = 1
+buttonsContainer.Parent = mainFrame
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.Parent = buttonsContainer
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout.Padding = UDim.new(0, 5)
+
+-- TP to Base Button
+local baseBtn = Instance.new("TextButton")
+baseBtn.Size = UDim2.new(1, -10, 0, 38)
+baseBtn.Position = UDim2.new(0, 5, 0, 0)
+baseBtn.Text = "TP to Base"
+baseBtn.BackgroundColor3 = C.Control
+baseBtn.TextColor3 = C.White
+baseBtn.Font = Enum.Font.GothamBold
+baseBtn.BorderSizePixel = 0
+addCorner(baseBtn, 7)
+addStroke(baseBtn, C.Hover, 1)
+baseBtn.LayoutOrder = 0
+baseBtn.Parent = buttonsContainer
+
+baseBtn.MouseButton1Click:Connect(function()
+	teleportToBase()
+end)
+
+-- Teleport Buttons 1-7
+for i = 1, 7 do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -10, 0, 38)
+	btn.Position = UDim2.new(0, 5, 0, 0)
+	btn.Text = "Teleport to " .. tostring(i)
+	btn.BackgroundColor3 = C.Control
+	btn.TextColor3 = C.White
+	btn.Font = Enum.Font.GothamBold
+	btn.BorderSizePixel = 0
+	addCorner(btn, 7)
+	addStroke(btn, C.Hover, 1)
+	btn.LayoutOrder = i
+	btn.Parent = buttonsContainer
+
+	local targetIndex = i + 1
+	btn.MouseButton1Click:Connect(function() teleportSequenceTo(targetIndex) end)
+end
+
+--- [ 2. Eggs Panel ] ---
+local eggsFrame = Instance.new("Frame")
+eggsFrame.Size = UDim2.new(0, 310, 0, 420)
+eggsFrame.Position = UDim2.new(0.18, 0, 0.3, 0)
+eggsFrame.BackgroundColor3 = C.Window
+eggsFrame.BorderSizePixel = 0
+addCorner(eggsFrame, 12)
+addStroke(eggsFrame, C.Stroke, 1.2)
+eggsFrame.Parent = screenGui
+
+local eggsTitleBar = Instance.new("Frame")
+eggsTitleBar.Size = UDim2.new(1, 0, 0, 30)
+eggsTitleBar.BackgroundColor3 = C.Log
+eggsTitleBar.BorderSizePixel = 0
+addCorner(eggsTitleBar, 12)
+eggsTitleBar.Parent = eggsFrame
+
+local eggsTitleLabel = Instance.new("TextLabel")
+eggsTitleLabel.Size = UDim2.new(1, -30, 1, 0)
+eggsTitleLabel.Text = " 🥚 Eggs Panel"
+eggsTitleLabel.TextColor3 = C.Border
+eggsTitleLabel.Font = Enum.Font.GothamBold
+eggsTitleLabel.BackgroundTransparency = 1
+eggsTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+eggsTitleLabel.Parent = eggsTitleBar
+
+local eggsCloseButton = Instance.new("TextButton")
+eggsCloseButton.Size = UDim2.new(0, 30, 1, 0)
+eggsCloseButton.Position = UDim2.new(1, -30, 0, 0)
+eggsCloseButton.Text = "X"
+eggsCloseButton.TextColor3 = C.Accent
+eggsCloseButton.Font = Enum.Font.GothamBold
+eggsCloseButton.BackgroundColor3 = C.RedDim
+eggsCloseButton.BorderSizePixel = 0
+addCorner(eggsCloseButton, 8)
+addStroke(eggsCloseButton, C.Stroke, 1)
+eggsCloseButton.Parent = eggsTitleBar
+eggsCloseButton.MouseButton1Click:Connect(function() eggsFrame.Visible = false end)
+
+enableDragging(eggsFrame, eggsTitleBar)
+
+local eggsScroll = Instance.new("ScrollingFrame")
+eggsScroll.Size = UDim2.new(1, 0, 1, -30)
+eggsScroll.Position = UDim2.new(0, 0, 0, 30)
+eggsScroll.BackgroundTransparency = 1
+eggsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+eggsScroll.ScrollBarThickness = 4
+eggsScroll.ScrollBarImageColor3 = C.Dim
+eggsScroll.Parent = eggsFrame
+
+local eggsListLayout = Instance.new("UIListLayout")
+eggsListLayout.Parent = eggsScroll
+eggsListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+eggsListLayout.Padding = UDim.new(0, 5)
+
+--- [ 3. Settings Panel ] ---
+local settingsFrame = Instance.new("Frame")
+settingsFrame.Size = UDim2.new(0, 220, 0, 480)
+settingsFrame.Position = UDim2.new(0.42, 0, 0.3, 0)
+settingsFrame.BackgroundColor3 = C.Window
+settingsFrame.BorderSizePixel = 0
+addCorner(settingsFrame, 12)
+addStroke(settingsFrame, C.Stroke, 1.2)
+settingsFrame.Parent = screenGui
+
+local settingsTitleBar = Instance.new("Frame")
+settingsTitleBar.Size = UDim2.new(1, 0, 0, 30)
+settingsTitleBar.BackgroundColor3 = C.Log
+settingsTitleBar.BorderSizePixel = 0
+addCorner(settingsTitleBar, 12)
+settingsTitleBar.Parent = settingsFrame
+
+local settingsTitleLabel = Instance.new("TextLabel")
+settingsTitleLabel.Size = UDim2.new(1, -30, 1, 0)
+settingsTitleLabel.Text = " ⚙️ Settings"
+settingsTitleLabel.TextColor3 = C.Border
+settingsTitleLabel.Font = Enum.Font.GothamBold
+settingsTitleLabel.BackgroundTransparency = 1
+settingsTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+settingsTitleLabel.Parent = settingsTitleBar
+
+local settingsCloseBtn = Instance.new("TextButton")
+settingsCloseBtn.Size = UDim2.new(0, 30, 1, 0)
+settingsCloseBtn.Position = UDim2.new(1, -30, 0, 0)
+settingsCloseBtn.Text = "X"
+settingsCloseBtn.TextColor3 = C.Accent
+settingsCloseBtn.Font = Enum.Font.GothamBold
+settingsCloseBtn.BackgroundColor3 = C.RedDim
+settingsCloseBtn.BorderSizePixel = 0
+addCorner(settingsCloseBtn, 8)
+addStroke(settingsCloseBtn, C.Stroke, 1)
+settingsCloseBtn.Parent = settingsTitleBar
+settingsCloseBtn.MouseButton1Click:Connect(function() settingsFrame.Visible = false end)
+
+enableDragging(settingsFrame, settingsTitleBar)
+
+-- Auto Refresh Toggle
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, -20, 0, 35)
+toggleBtn.Position = UDim2.new(0, 10, 0, 40)
+toggleBtn.Text = "Auto Refresh: ON"
+toggleBtn.BackgroundColor3 = C.ToggleOn
+toggleBtn.TextColor3 = C.White
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.BorderSizePixel = 0
+addCorner(toggleBtn, 7)
+addStroke(toggleBtn, C.Stroke, 1)
+toggleBtn.Parent = settingsFrame
+
+toggleBtn.MouseButton1Click:Connect(function()
+	autoRefreshEnabled = not autoRefreshEnabled
+	if autoRefreshEnabled then
+		toggleBtn.Text = "Auto Refresh: ON"
+		toggleBtn.BackgroundColor3 = C.ToggleOn
+	else
+		toggleBtn.Text = "Auto Refresh: OFF"
+		toggleBtn.BackgroundColor3 = C.RedDim
+	end
+end)
+
+-- Auto Refresh Delay Input Box
+local delayLabel = Instance.new("TextLabel")
+delayLabel.Size = UDim2.new(1, -20, 0, 20)
+delayLabel.Position = UDim2.new(0, 10, 0, 80)
+delayLabel.Text = "Refresh Delay (Max 10s):"
+delayLabel.TextColor3 = C.Text
+delayLabel.Font = Enum.Font.GothamBold
+delayLabel.BackgroundTransparency = 1
+delayLabel.TextXAlignment = Enum.TextXAlignment.Left
+delayLabel.Parent = settingsFrame
+
+local delayBox = Instance.new("TextBox")
+delayBox.Size = UDim2.new(1, -20, 0, 30)
+delayBox.Position = UDim2.new(0, 10, 0, 102)
+delayBox.Text = tostring(autoRefreshInterval)
+delayBox.PlaceholderText = "1 - 10 Sec"
+delayBox.BackgroundColor3 = C.Input
+delayBox.TextColor3 = C.White
+delayBox.Font = Enum.Font.GothamBold
+delayBox.PlaceholderColor3 = C.Dim
+delayBox.BorderSizePixel = 0
+addCorner(delayBox, 5)
+addStroke(delayBox, C.StrokeInput, 1)
+delayBox.Parent = settingsFrame
+
+delayBox.FocusLost:Connect(function()
+	local val = tonumber(delayBox.Text)
+	if val then
+		if val > 10 then val = 10 end
+		if val < 0.5 then val = 0.5 end
+		autoRefreshInterval = val
+		delayBox.Text = tostring(val)
+	else
+		delayBox.Text = tostring(autoRefreshInterval)
+	end
+end)
+
+-- Fast Grab Toggle
+local fastGrabBtn = Instance.new("TextButton")
+fastGrabBtn.Size = UDim2.new(1, -20, 0, 35)
+fastGrabBtn.Position = UDim2.new(0, 10, 0, 140)
+fastGrabBtn.Text = "Fast Grab: OFF"
+fastGrabBtn.BackgroundColor3 = C.RedDim
+fastGrabBtn.TextColor3 = C.White
+fastGrabBtn.Font = Enum.Font.GothamBold
+fastGrabBtn.BorderSizePixel = 0
+addCorner(fastGrabBtn, 7)
+addStroke(fastGrabBtn, C.Stroke, 1)
+fastGrabBtn.Parent = settingsFrame
+
+fastGrabBtn.MouseButton1Click:Connect(function()
+	fastGrabEnabled = not fastGrabEnabled
+	if fastGrabEnabled then
+		fastGrabBtn.Text = "Fast Grab: ON"
+		fastGrabBtn.BackgroundColor3 = C.ToggleOn
+	else
+		fastGrabBtn.Text = "Fast Grab: OFF"
+		fastGrabBtn.BackgroundColor3 = C.RedDim
+	end
+	populateEggs()
+end)
+
+-- Show Egg Price Toggle
+local showPriceBtn = Instance.new("TextButton")
+showPriceBtn.Size = UDim2.new(1, -20, 0, 35)
+showPriceBtn.Position = UDim2.new(0, 10, 0, 185)
+showPriceBtn.Text = "Show Price: OFF"
+showPriceBtn.BackgroundColor3 = C.RedDim
+showPriceBtn.TextColor3 = C.White
+showPriceBtn.Font = Enum.Font.GothamBold
+showPriceBtn.BorderSizePixel = 0
+addCorner(showPriceBtn, 7)
+addStroke(showPriceBtn, C.Stroke, 1)
+showPriceBtn.Parent = settingsFrame
+
+showPriceBtn.MouseButton1Click:Connect(function()
+	showEggPriceEnabled = not showEggPriceEnabled
+	if showEggPriceEnabled then
+		showPriceBtn.Text = "Show Price: ON"
+		showPriceBtn.BackgroundColor3 = C.ToggleOn
+	else
+		showPriceBtn.Text = "Show Price: OFF"
+		showPriceBtn.BackgroundColor3 = C.RedDim
+	end
+	populateEggs()
+end)
+
+-- Get XP Toggle
+local getXpBtn = Instance.new("TextButton")
+getXpBtn.Size = UDim2.new(1, -20, 0, 35)
+getXpBtn.Position = UDim2.new(0, 10, 0, 230)
+getXpBtn.Text = "Get XP: OFF"
+getXpBtn.BackgroundColor3 = C.RedDim
+getXpBtn.TextColor3 = C.White
+getXpBtn.Font = Enum.Font.GothamBold
+getXpBtn.BorderSizePixel = 0
+addCorner(getXpBtn, 7)
+addStroke(getXpBtn, C.Stroke, 1)
+getXpBtn.Parent = settingsFrame
+
+getXpBtn.MouseButton1Click:Connect(function()
+	getXpEnabled = not getXpEnabled
+	if getXpEnabled then
+		getXpBtn.Text = "Get XP: ON"
+		getXpBtn.BackgroundColor3 = C.ToggleOn
+	else
+		getXpBtn.Text = "Get XP: OFF"
+		getXpBtn.BackgroundColor3 = C.RedDim
+	end
+end)
+
+-- Extra Jumps Input Setting
+local jumpsLabel = Instance.new("TextLabel")
+jumpsLabel.Size = UDim2.new(1, -20, 0, 20)
+jumpsLabel.Position = UDim2.new(0, 10, 0, 275)
+jumpsLabel.Text = "Extra Jumps Count:"
+jumpsLabel.TextColor3 = C.Text
+jumpsLabel.Font = Enum.Font.GothamBold
+jumpsLabel.BackgroundTransparency = 1
+jumpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+jumpsLabel.Parent = settingsFrame
+
+local jumpsBox = Instance.new("TextBox")
+jumpsBox.Size = UDim2.new(1, -20, 0, 30)
+jumpsBox.Position = UDim2.new(0, 10, 0, 297)
+jumpsBox.Text = "0"
+jumpsBox.PlaceholderText = "Enter Jumps"
+jumpsBox.BackgroundColor3 = C.Input
+jumpsBox.TextColor3 = C.White
+jumpsBox.Font = Enum.Font.GothamBold
+jumpsBox.PlaceholderColor3 = C.Dim
+jumpsBox.BorderSizePixel = 0
+addCorner(jumpsBox, 5)
+addStroke(jumpsBox, C.StrokeInput, 1)
+jumpsBox.Parent = settingsFrame
+
+jumpsBox.FocusLost:Connect(function()
+	local val = tonumber(jumpsBox.Text)
+	if val then
+		applyCustomJumpCount(val)
+		jumpsBox.Text = tostring(val)
+	else
+		jumpsBox.Text = tostring(customJumpCount)
+	end
+end)
+
+-- WalkSpeed Input Setting
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(1, -20, 0, 20)
+speedLabel.Position = UDim2.new(0, 10, 0, 335)
+speedLabel.Text = "Walk Speed:"
+speedLabel.TextColor3 = C.Text
+speedLabel.Font = Enum.Font.GothamBold
+speedLabel.BackgroundTransparency = 1
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.Parent = settingsFrame
+
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(1, -20, 0, 30)
+speedBox.Position = UDim2.new(0, 10, 0, 357)
+speedBox.Text = "16"
+speedBox.PlaceholderText = "Default: 16"
+speedBox.BackgroundColor3 = C.Input
+speedBox.TextColor3 = C.White
+speedBox.Font = Enum.Font.GothamBold
+speedBox.PlaceholderColor3 = C.Dim
+speedBox.BorderSizePixel = 0
+addCorner(speedBox, 5)
+addStroke(speedBox, C.StrokeInput, 1)
+speedBox.Parent = settingsFrame
+
+speedBox.FocusLost:Connect(function()
+	local val = tonumber(speedBox.Text)
+	if val then
+		applyCustomSpeed(val)
+		speedBox.Text = tostring(val)
+	else
+		speedBox.Text = tostring(customWalkSpeed)
+	end
+end)
+
+--- [ 4. Blacklist Panel ] ---
+local blacklistFrame = Instance.new("Frame")
+blacklistFrame.Size = UDim2.new(0, 260, 0, 360)
+blacklistFrame.Position = UDim2.new(0.60, 0, 0.3, 0)
+blacklistFrame.BackgroundColor3 = C.Window
+blacklistFrame.BorderSizePixel = 0
+addCorner(blacklistFrame, 12)
+addStroke(blacklistFrame, C.Stroke, 1.2)
+blacklistFrame.Parent = screenGui
+
+local blacklistTitleBar = Instance.new("Frame")
+blacklistTitleBar.Size = UDim2.new(1, 0, 0, 30)
+blacklistTitleBar.BackgroundColor3 = C.Log
+blacklistTitleBar.BorderSizePixel = 0
+addCorner(blacklistTitleBar, 12)
+blacklistTitleBar.Parent = blacklistFrame
+
+local blacklistTitleLabel = Instance.new("TextLabel")
+blacklistTitleLabel.Size = UDim2.new(1, -30, 1, 0)
+blacklistTitleLabel.Text = " 🚫 Blacklist Panel"
+blacklistTitleLabel.TextColor3 = C.Border
+blacklistTitleLabel.Font = Enum.Font.GothamBold
+blacklistTitleLabel.BackgroundTransparency = 1
+blacklistTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+blacklistTitleLabel.Parent = blacklistTitleBar
+
+local blacklistCloseBtn = Instance.new("TextButton")
+blacklistCloseBtn.Size = UDim2.new(0, 30, 1, 0)
+blacklistCloseBtn.Position = UDim2.new(1, -30, 0, 0)
+blacklistCloseBtn.Text = "X"
+blacklistCloseBtn.TextColor3 = C.Accent
+blacklistCloseBtn.Font = Enum.Font.GothamBold
+blacklistCloseBtn.BackgroundColor3 = C.RedDim
+blacklistCloseBtn.BorderSizePixel = 0
+addCorner(blacklistCloseBtn, 8)
+addStroke(blacklistCloseBtn, C.Stroke, 1)
+blacklistCloseBtn.Parent = blacklistTitleBar
+blacklistCloseBtn.MouseButton1Click:Connect(function() blacklistFrame.Visible = false end)
+
+enableDragging(blacklistFrame, blacklistTitleBar)
+
+local blacklistScroll = Instance.new("ScrollingFrame")
+blacklistScroll.Size = UDim2.new(1, 0, 1, -30)
+blacklistScroll.Position = UDim2.new(0, 0, 0, 30)
+blacklistScroll.BackgroundTransparency = 1
+blacklistScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+blacklistScroll.ScrollBarThickness = 4
+blacklistScroll.ScrollBarImageColor3 = C.Dim
+blacklistScroll.Parent = blacklistFrame
+
+local blacklistListLayout = Instance.new("UIListLayout")
+blacklistListLayout.Parent = blacklistScroll
+blacklistListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+blacklistListLayout.Padding = UDim.new(0, 5)
+
+-- Populate Blacklist Panel UI
+populateBlacklist = function()
+	for _, child in ipairs(blacklistScroll:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+
+	local count = 0
+	for eggName, isBlacklisted in pairs(blacklistedEggs) do
+		if isBlacklisted then
+			count = count + 1
+
+			local itemFrame = Instance.new("Frame")
+			itemFrame.Size = UDim2.new(1, -10, 0, 40)
+			itemFrame.BackgroundColor3 = C.Row
+			itemFrame.BorderSizePixel = 0
+			addCorner(itemFrame, 6)
+			addStroke(itemFrame, C.StrokeInput, 1)
+			itemFrame.Parent = blacklistScroll
+
+			local nameLabel = Instance.new("TextLabel")
+			nameLabel.Size = UDim2.new(0.6, -5, 1, 0)
+			nameLabel.Position = UDim2.new(0, 5, 0, 0)
+			nameLabel.Text = eggName
+			nameLabel.TextColor3 = C.White
+			nameLabel.Font = Enum.Font.GothamBold
+			nameLabel.TextScaled = true
+			nameLabel.BackgroundTransparency = 1
+			nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+			nameLabel.Parent = itemFrame
+
+			local unblacklistBtn = Instance.new("TextButton")
+			unblacklistBtn.Size = UDim2.new(0.38, -5, 0.7, 0)
+			unblacklistBtn.Position = UDim2.new(0.6, 5, 0.15, 0)
+			unblacklistBtn.Text = "Unblacklist"
+			unblacklistBtn.BackgroundColor3 = C.Red
+			unblacklistBtn.TextColor3 = C.White
+			unblacklistBtn.Font = Enum.Font.GothamBold
+			unblacklistBtn.TextScaled = true
+			unblacklistBtn.BorderSizePixel = 0
+			addCorner(unblacklistBtn, 4)
+			addStroke(unblacklistBtn, C.Stroke, 1)
+			unblacklistBtn.Parent = itemFrame
+
+			unblacklistBtn.MouseButton1Click:Connect(function()
+				blacklistedEggs[eggName] = nil
+				populateEggs()
+				populateBlacklist()
+			end)
+		end
+	end
+
+	blacklistScroll.CanvasSize = UDim2.new(0, 0, 0, count * 45)
+end
+
+-- Populate Visible Eggs with Rarity, Timer (Stolen), Price, Instant Updates, and Blacklist Control
+populateEggs = function()
+	clearConnections()
+
+	for _, child in ipairs(eggsScroll:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+
+	local count = 0
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if (obj:IsA("BasePart") or obj:IsA("Model")) and nameEndsWithEgg(obj.Name) then
+			-- Skip drawing if egg name is blacklisted
+			if isObjectVisible(obj) and not blacklistedEggs[obj.Name] then
+				count = count + 1
+
+				-- Apply Settings Modifications to Egg Object
+				applyFastGrab(obj)
+				applyPriceVisibility(obj)
+
+				local itemHeight = showEggPriceEnabled and 70 or 55
+
+				local itemFrame = Instance.new("Frame")
+				itemFrame.Size = UDim2.new(1, -10, 0, itemHeight)
+				itemFrame.BackgroundColor3 = C.Row
+				itemFrame.BorderSizePixel = 0
+				addCorner(itemFrame, 6)
+				addStroke(itemFrame, C.StrokeInput, 1)
+				itemFrame.Parent = eggsScroll
+
+				-- 1. Name Label
+				local nameLabel = Instance.new("TextLabel")
+				nameLabel.Size = UDim2.new(0.52, -5, 0, 18)
+				nameLabel.Position = UDim2.new(0, 5, 0, 2)
+				nameLabel.Text = obj.Name
+				nameLabel.TextColor3 = C.White
+				nameLabel.Font = Enum.Font.GothamBold
+				nameLabel.TextScaled = true
+				nameLabel.BackgroundTransparency = 1
+				nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+				nameLabel.Parent = itemFrame
+
+				-- Get Overhead UI
+				local animalOverhead = getAnimalOverhead(obj)
+
+				-- 2. Rarity Label
+				local rarityLabel = Instance.new("TextLabel")
+				rarityLabel.Size = UDim2.new(0.52, -5, 0, 15)
+				rarityLabel.Position = UDim2.new(0, 5, 0, 20)
+				rarityLabel.TextColor3 = Color3.fromRGB(180, 180, 220)
+				rarityLabel.Font = Enum.Font.GothamBold
+				rarityLabel.TextScaled = true
+				rarityLabel.BackgroundTransparency = 1
+				rarityLabel.TextXAlignment = Enum.TextXAlignment.Left
+				rarityLabel.Parent = itemFrame
+
+				-- 3. Timer (Stolen) Label
+				local timerLabel = Instance.new("TextLabel")
+				timerLabel.Size = UDim2.new(0.52, -5, 0, 15)
+				timerLabel.Position = UDim2.new(0, 5, 0, 36)
+				timerLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+				timerLabel.Font = Enum.Font.GothamBold
+				timerLabel.TextScaled = true
+				timerLabel.BackgroundTransparency = 1
+				timerLabel.TextXAlignment = Enum.TextXAlignment.Left
+				timerLabel.Parent = itemFrame
+
+				-- 4. Price Label (Optional)
+				local priceLabel = Instance.new("TextLabel")
+				priceLabel.Size = UDim2.new(0.52, -5, 0, 15)
+				priceLabel.Position = UDim2.new(0, 5, 0, 52)
+				priceLabel.TextColor3 = C.Green
+				priceLabel.Font = Enum.Font.GothamBold
+				priceLabel.TextScaled = true
+				priceLabel.BackgroundTransparency = 1
+				priceLabel.TextXAlignment = Enum.TextXAlignment.Left
+				priceLabel.Visible = showEggPriceEnabled
+				priceLabel.Parent = itemFrame
+
+				-- Extract Initial Text Values and Set Instant Updates
+				if animalOverhead then
+					local rareObj = animalOverhead:FindFirstChild("Rarity")
+					local stolenObj = animalOverhead:FindFirstChild("Stolen")
+					local priceObj = animalOverhead:FindFirstChild("Price")
+
+					if rareObj and rareObj:IsA("TextLabel") then
+						rarityLabel.Text = "Rarity: " .. rareObj.Text
+						local conn = rareObj:GetPropertyChangedSignal("Text"):Connect(function()
+							rarityLabel.Text = "Rarity: " .. rareObj.Text
+						end)
+						table.insert(activeConnections, conn)
+					else
+						rarityLabel.Text = "Rarity: N/A"
+					end
+
+					if stolenObj and stolenObj:IsA("TextLabel") then
+						timerLabel.Text = "Timer: " .. stolenObj.Text
+						local conn = stolenObj:GetPropertyChangedSignal("Text"):Connect(function()
+							timerLabel.Text = "Timer: " .. stolenObj.Text
+						end)
+						table.insert(activeConnections, conn)
+					else
+						timerLabel.Text = "Timer: N/A"
+					end
+
+					if priceObj and priceObj:IsA("TextLabel") then
+						priceLabel.Text = "Price: " .. priceObj.Text
+						local conn = priceObj:GetPropertyChangedSignal("Text"):Connect(function()
+							priceLabel.Text = "Price: " .. priceObj.Text
+						end)
+						table.insert(activeConnections, conn)
+					else
+						priceLabel.Text = "Price: N/A"
+					end
+				else
+					rarityLabel.Text = "Rarity: N/A"
+					timerLabel.Text = "Timer: N/A"
+					priceLabel.Text = "Price: N/A"
+				end
+
+				-- TP Button
+				local tpBtn = Instance.new("TextButton")
+				tpBtn.Size = UDim2.new(0.2, -3, 0.6, 0)
+				tpBtn.Position = UDim2.new(0.53, 0, 0.2, 0)
+				tpBtn.Text = "TP"
+				tpBtn.BackgroundColor3 = C.Green
+				tpBtn.TextColor3 = C.White
+				tpBtn.Font = Enum.Font.GothamBold
+				tpBtn.TextScaled = true
+				tpBtn.BorderSizePixel = 0
+				addCorner(tpBtn, 4)
+				addStroke(tpBtn, C.Stroke, 1)
+				tpBtn.Parent = itemFrame
+
+				tpBtn.MouseButton1Click:Connect(function()
+					teleportToEgg(obj)
+				end)
+
+				-- Blacklist Button in Egg Item Frame
+				local blBtn = Instance.new("TextButton")
+				blBtn.Size = UDim2.new(0.25, -3, 0.6, 0)
+				blBtn.Position = UDim2.new(0.74, 0, 0.2, 0)
+				blBtn.Text = "Blacklist"
+				blBtn.BackgroundColor3 = C.Red
+				blBtn.TextColor3 = C.White
+				blBtn.Font = Enum.Font.GothamBold
+				blBtn.TextScaled = true
+				blBtn.BorderSizePixel = 0
+				addCorner(blBtn, 4)
+				addStroke(blBtn, C.Stroke, 1)
+				blBtn.Parent = itemFrame
+
+				blBtn.MouseButton1Click:Connect(function()
+					blacklistedEggs[obj.Name] = true
+					populateEggs()
+					populateBlacklist()
+				end)
+			end
+		end
+	end
+	eggsScroll.CanvasSize = UDim2.new(0, 0, 0, count * (showEggPriceEnabled and 75 or 60))
+end
+
+-- 7. Auto Refresh Loop Script
+task.spawn(function()
+	while true do
+		task.wait(autoRefreshInterval)
+		if autoRefreshEnabled and eggsFrame and eggsFrame.Visible then
+			populateEggs()
+		end
+	end
+end)
+
+-- 8. Get XP - Smart Remote Discovery System
+-- Executor function references
+local _getgc = getgc or (debug and debug.getgc)
+local _getupvalues = (debug and debug.getupvalues) or getupvalues
+local _getconnections = getconnections or (debug and debug.getconnections)
+local _getinfo = (debug and (debug.getinfo or debug.info))
+
+-- Helper: get source string from a function
+local function getFuncSource(func)
+	if not debug or type(func) ~= "function" then return "" end
+	if debug.getinfo then
+		local ok, info = pcall(debug.getinfo, func)
+		if ok and info then
+			return tostring(info.short_src or info.source or "")
+		end
+	end
+	if debug.info then
+		local ok, src = pcall(debug.info, func, "s")
+		if ok then return tostring(src or "") end
+	end
+	return ""
+end
+
+-- Cache for trampoline remote
+local cachedTrampolineName = nil
+local cachedRemote = nil
+
+-- Smart search: find the correct RemoteEvent for a given trampoline name
+local function findTrampolineRemote(trampName)
+	if not trampName then return nil end
+
+	local packages = ReplicatedStorage:FindFirstChild("Packages")
+	if not packages then return nil end
+	local netFolder = packages:FindFirstChild("Net")
+	if not netFolder then return nil end
+
+	-- Get the trampoline model and its Weld
+	local mapFolder = workspace:FindFirstChild("Map")
+	if not mapFolder then return nil end
+	local baseTrampolines = mapFolder:FindFirstChild("BaseTrampolines")
+	if not baseTrampolines then return nil end
+	local tramp = baseTrampolines:FindFirstChild(trampName)
+	if not tramp then return nil end
+	local weld = tramp:FindFirstChild("Weld")
+	if not weld then return nil end
+
+	-- Collect all RemoteEvents in the Net folder
+	local allRemotes = {}
+	for _, d in ipairs(netFolder:GetDescendants()) do
+		if d:IsA("RemoteEvent") then
+			table.insert(allRemotes, d)
+		end
+	end
+	if #allRemotes == 0 then return nil end
+
+	-- Method 1: Search getgc for functions whose upvalues contain BOTH the trampoline Weld and a RemoteEvent
+	if _getgc and _getupvalues then
+		local gc = _getgc()
+		local checked = 0
+		for _, func in ipairs(gc) do
+			if type(func) == "function" then
+				checked = checked + 1
+				if checked > 50000 then break end -- safety limit
+				local ok, ups = pcall(_getupvalues, func)
+				if ok and type(ups) == "table" then
+					local foundWeld = false
+					local foundRemote = nil
+					for _, v in pairs(ups) do
+						if v == weld then
+							foundWeld = true
+						elseif typeof(v) == "Instance" and v:IsA("RemoteEvent") and v:IsDescendantOf(netFolder) then
+							foundRemote = v
+						end
+					end
+					if foundWeld and foundRemote then
+						print("[GetXP] Found remote via getgc Weld upvalue:", foundRemote.Name)
+						return foundRemote
+					end
+				end
+			end
+		end
+	end
+
+	-- Method 2: Search getgc for functions whose upvalues contain BOTH the trampoline model and a RemoteEvent
+	if _getgc and _getupvalues then
+		local gc = _getgc()
+		local checked = 0
+		for _, func in ipairs(gc) do
+			if type(func) == "function" then
+				checked = checked + 1
+				if checked > 50000 then break end
+				local ok, ups = pcall(_getupvalues, func)
+				if ok and type(ups) == "table" then
+					local foundTramp = false
+					local foundRemote = nil
+					for _, v in pairs(ups) do
+						if v == tramp then
+							foundTramp = true
+						elseif typeof(v) == "Instance" and v:IsA("RemoteEvent") and v:IsDescendantOf(netFolder) then
+							foundRemote = v
+						end
+					end
+					if foundTramp and foundRemote then
+						print("[GetXP] Found remote via getgc trampoline model:", foundRemote.Name)
+						return foundRemote
+					end
+				end
+			end
+		end
+	end
+
+	-- Method 3: Use getconnections on OnClientEvent + check source for trampoline references
+	if _getconnections then
+		for _, remote in ipairs(allRemotes) do
+			local ok, conns = pcall(_getconnections, remote.OnClientEvent)
+			if ok and type(conns) == "table" then
+				for _, c in ipairs(conns) do
+					local fOk, fn = pcall(function() return c.Function end)
+					if fOk and type(fn) == "function" then
+						local src = getFuncSource(fn):lower()
+						if src:find("trampoline") then
+							print("[GetXP] Found remote via OnClientEvent source:", remote.Name, "src:", src)
+							return remote
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- Method 4: Search getgc for functions whose source mentions trampoline, extract RemoteEvent from upvalues
+	if _getgc and _getinfo and _getupvalues then
+		local gc = _getgc()
+		local checked = 0
+		for _, func in ipairs(gc) do
+			if type(func) == "function" then
+				checked = checked + 1
+				if checked > 50000 then break end
+				local src = getFuncSource(func):lower()
+				if src:find("trampoline") then
+					local ok, ups = pcall(_getupvalues, func)
+					if ok and type(ups) == "table" then
+						for _, v in pairs(ups) do
+							if typeof(v) == "Instance" and v:IsA("RemoteEvent") and v:IsDescendantOf(netFolder) then
+								print("[GetXP] Found remote via source + upvalues:", v.Name)
+								return v
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- Method 5: Try Net library API if available
+	local netModule = netFolder:FindFirstChild("Net")
+	if netModule and netModule:IsA("ModuleScript") then
+		local ok, netLib = pcall(require, netModule)
+		if ok and netLib and type(netLib) == "table" then
+			for _, methodName in ipairs({"GetRemote", "getRemote", "WaitForRemote", "Resolve", "resolve"}) do
+				if type(netLib[methodName]) == "function" then
+					for _, candidateName in ipairs({"Bounce", "BounceTrampoline", "TrampolineBounce", "Trampoline", "Jump", "JumpTrampoline"}) do
+						local rOk, result = pcall(netLib[methodName], netLib, candidateName)
+						if rOk and result and typeof(result) == "Instance" and result:IsA("RemoteEvent") then
+							print("[GetXP] Found remote via Net library API:", result.Name)
+							return result
+						end
+					end
+				end
+			end
+		end
+	end
+
+	warn("[GetXP] Could not find remote for trampoline:", trampName)
+	return nil
+end
+
+-- Get XP Main Loop
+task.spawn(function()
+	while true do
+		if getXpEnabled then
+			local trampName = getPlayerTrampolineName()
+
+			if trampName then
+				-- Re-discover remote if trampoline changed or cache is invalid
+				local needSearch = false
+				if trampName ~= cachedTrampolineName then
+					needSearch = true
+				elseif not cachedRemote or not cachedRemote.Parent then
+					needSearch = true
+				end
+
+				if needSearch then
+					cachedTrampolineName = trampName
+					cachedRemote = findTrampolineRemote(trampName)
+					if cachedRemote then
+						print("[GetXP] Using remote for", trampName, "->", cachedRemote.Name)
+					else
+						warn("[GetXP] No remote found for", trampName, "- retrying next cycle")
+						task.wait(2)
+						continue
+					end
+				end
+
+				if cachedRemote and cachedRemote.Parent then
+					-- Get the Weld part for the trampoline
+					local mapFolder = workspace:FindFirstChild("Map")
+					local baseTrampolines = mapFolder and mapFolder:FindFirstChild("BaseTrampolines")
+					local tramp = baseTrampolines and baseTrampolines:FindFirstChild(trampName)
+					local weld = tramp and tramp:FindFirstChild("Weld")
+
+					if weld then
+						-- Fire the remote 65 times with 0.1s cooldown
+						for i = 1, 65 do
+							if not getXpEnabled then break end
+							pcall(function()
+								cachedRemote:FireServer(weld)
+							end)
+							task.wait(0.1)
+						end
+
+						-- Wait 5 seconds before repeating
+						if getXpEnabled then
+							task.wait(5)
+						end
+					else
+						warn("[GetXP] Weld not found for trampoline:", trampName)
+						cachedRemote = nil
+						task.wait(1)
+					end
+				else
+					-- Remote became invalid, clear cache and retry
+					cachedRemote = nil
+					task.wait(1)
+				end
+			else
+				-- No trampoline found, wait and retry
+				task.wait(1)
+			end
+		else
+			-- Get XP is OFF, clear cache and wait
+			cachedTrampolineName = nil
+			cachedRemote = nil
+			task.wait(1)
+		end
+	end
+end)
+
+populateEggs()
+populateBlacklist()
