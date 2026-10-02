@@ -1,0 +1,3475 @@
+--=====================================================================
+-- AceDuelsFinder  (fully deobfuscated / cleaned) by certz used ai to clean it
+--=====================================================================
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+--=====================================================================
+-- WebSocket constructor detection
+--=====================================================================
+
+local connect = nil
+
+if syn and syn.websocket then
+	connect = syn.websocket.connect
+elseif type(WebSocket) == "table" and WebSocket.connect then
+	connect = WebSocket.connect
+elseif type(WebSocket) == "function" then
+	connect = WebSocket
+end
+
+if not connect and getgenv and getgenv().WebSocket then
+	connect = getgenv().WebSocket.connect
+end
+
+--=====================================================================
+-- Single-instance guard
+--=====================================================================
+
+local isCurrentRun
+do
+	local runToken = {}
+	local globalEnv = type(getgenv) == "function" and getgenv() or nil
+
+	if globalEnv then
+		globalEnv.__AceFinderRun = runToken
+	end
+
+	isCurrentRun = function()
+		return not globalEnv or globalEnv.__AceFinderRun == runToken
+	end
+end
+
+--=====================================================================
+-- Configuration
+--=====================================================================
+
+local CONFIG = {
+	postCooldown = 30,
+	pingEvery = 20,
+	tradeCooldown = 26,
+	duelCooldown = 16,
+	matchRadius = 12,
+	backoffMin = 5,
+	backoffMax = 60,
+	wsUrl = "wss://acefinder-901fb3a7c950.kellygrant0527.workers.dev/ws",
+	wsToken = "qJU8l1fJvGa2CFSU1Ga5ENV6ycUqQyK6",
+}
+
+--=====================================================================
+-- Game bridge
+--=====================================================================
+
+local GameBridge = {}
+
+local safeRequire
+do
+	safeRequire = function(moduleScript)
+		if not moduleScript then
+			return nil
+		end
+
+		local ok, result = pcall(require, moduleScript)
+
+		if ok then
+			ok = type(result) == "table"
+		end
+
+		if not ok then
+			return nil
+		end
+
+		return result
+	end
+end
+
+local mutationsData
+do
+	local ok, result = pcall(function()
+		return require(ReplicatedStorage.Datas.Mutations)
+	end)
+
+	if not ok then
+		result = {}
+	end
+
+	mutationsData = result
+end
+
+pcall(function()
+	return require(ReplicatedStorage.Shared.BaseSkins)
+end)
+
+pcall(function()
+	return require(ReplicatedStorage.Shared.Gears)
+end)
+
+local assetCache
+do
+	local ok, result = pcall(function()
+		return ReplicatedStorage.Controllers.AssetStreamController.AssetCache
+	end)
+
+	if not ok then
+		result = nil
+	end
+
+	assetCache = result
+end
+
+local controllers = ReplicatedStorage:FindFirstChild("Controllers")
+local tradeController = safeRequire(controllers and controllers:FindFirstChild("TradeController"))
+local duelsController = safeRequire(controllers and controllers:FindFirstChild("DuelsMachineController"))
+
+local animalsShared = safeRequire(ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("Animals"))
+local brainrotAssets = safeRequire(ReplicatedStorage:FindFirstChild("Shared") and ReplicatedStorage.Shared:FindFirstChild("BrainrotAssets"))
+
+local net = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Net")
+
+function GameBridge.MutationColor(mutationName)
+	if not mutationName or mutationName == "" or mutationName == "None" then
+		return nil
+	end
+
+	local entry = mutationsData[mutationName]
+
+	if type(entry) == "table" and typeof(entry.MainColor) == "Color3" then
+		return entry.MainColor
+	end
+
+	return nil
+end
+
+local getDisplayToKeyMap
+do
+	local cachedMap = nil
+
+	getDisplayToKeyMap = function()
+		if cachedMap then
+			return cachedMap
+		end
+
+		cachedMap = {}
+		local counts = {}
+
+		local ok, animalsData = pcall(function()
+			return require(ReplicatedStorage.Datas.Animals)
+		end)
+
+		if ok and type(animalsData) == "table" then
+			for key, info in pairs(animalsData) do
+				local displayName = type(info) == "table" and info.DisplayName or nil
+
+				if type(displayName) == "string" and displayName ~= "" and displayName ~= key then
+					counts[displayName] = (counts[displayName] or 0) + 1
+					cachedMap[displayName] = key
+				end
+			end
+
+			for displayName, count in pairs(counts) do
+				if 1 < count then
+					cachedMap[displayName] = nil
+				end
+			end
+		end
+
+		return cachedMap
+	end
+end
+
+do
+	local modelCache = {}
+
+	function GameBridge.BrainrotModel(name)
+		if not name or name == "" then
+			return nil
+		end
+
+		local cached = modelCache[name]
+
+		if cached and cached.Parent then
+			return cached
+		end
+
+		if brainrotAssets and type(brainrotAssets.getModel) == "function" then
+			local ok, model = pcall(brainrotAssets.getModel, name)
+
+			if ok and typeof(model) == "Instance" and model:IsA("Model") then
+				modelCache[name] = model
+				return model
+			end
+
+			local mappedKey = getDisplayToKeyMap()[name]
+
+			if mappedKey then
+				local ok2, mappedModel = pcall(brainrotAssets.getModel, mappedKey)
+
+				if ok2 and typeof(mappedModel) == "Instance" and mappedModel:IsA("Model") then
+					modelCache[name] = mappedModel
+					return mappedModel
+				end
+			end
+		end
+
+		if assetCache then
+			local found = assetCache:FindFirstChild(name)
+
+			if found and found:IsA("Model") then
+				return found
+			end
+		end
+
+		local plots = workspace:FindFirstChild("Plots")
+
+		if plots then
+			for _, plot in ipairs(plots:GetChildren()) do
+				local found = plot:FindFirstChild(name)
+
+				if found and found:IsA("Model") then
+					return found
+				end
+			end
+		end
+
+		for _, child in ipairs(workspace:GetChildren()) do
+			if child:IsA("Model") and child:GetAttribute("Index") == name then
+				return child
+			end
+		end
+
+		return nil
+	end
+end
+
+do
+	local COUNTRY_TO_REGION = {
+		US = "North America",
+		CA = "North America",
+		MX = "North America",
+		GB = "Northern Europe",
+		IE = "Northern Europe",
+		SE = "Northern Europe",
+		NO = "Northern Europe",
+		DK = "Northern Europe",
+		FI = "Northern Europe",
+		IS = "Northern Europe",
+		LT = "Northern Europe",
+		LV = "Northern Europe",
+		EE = "Northern Europe",
+		ES = "Southern Europe",
+		PT = "Southern Europe",
+		IT = "Southern Europe",
+		GR = "Southern Europe",
+		HR = "Southern Europe",
+		RS = "Southern Europe",
+		SI = "Southern Europe",
+		MT = "Southern Europe",
+		AL = "Southern Europe",
+		BA = "Southern Europe",
+		MK = "Southern Europe",
+		DE = "Western Europe",
+		FR = "Western Europe",
+		NL = "Western Europe",
+		BE = "Western Europe",
+		AT = "Western Europe",
+		CH = "Western Europe",
+		LU = "Western Europe",
+		PL = "Eastern Europe",
+		CZ = "Eastern Europe",
+		SK = "Eastern Europe",
+		HU = "Eastern Europe",
+		RO = "Eastern Europe",
+		BG = "Eastern Europe",
+		UA = "Eastern Europe",
+		RU = "Eastern Europe",
+		BY = "Eastern Europe",
+		MD = "Eastern Europe",
+		BR = "South America",
+		AR = "South America",
+		CL = "South America",
+		CO = "South America",
+		PE = "South America",
+		UY = "South America",
+		VE = "South America",
+		EC = "South America",
+		BO = "South America",
+		PY = "South America",
+		AU = "Oceania",
+		NZ = "Oceania",
+		FJ = "Oceania",
+		PG = "Oceania",
+		JP = "East Asia",
+		KR = "East Asia",
+		CN = "East Asia",
+		TW = "East Asia",
+		HK = "East Asia",
+		MO = "East Asia",
+		MN = "East Asia",
+		SG = "Southeast Asia",
+		MY = "Southeast Asia",
+		TH = "Southeast Asia",
+		ID = "Southeast Asia",
+		PH = "Southeast Asia",
+		VN = "Southeast Asia",
+		IN = "South Asia",
+		PK = "South Asia",
+		BD = "South Asia",
+		LK = "South Asia",
+		NP = "South Asia",
+		AE = "Middle East",
+		SA = "Middle East",
+		IL = "Middle East",
+		TR = "Middle East",
+		QA = "Middle East",
+		KW = "Middle East",
+		IQ = "Middle East",
+		IR = "Middle East",
+		ZA = "Africa",
+		NG = "Africa",
+		EG = "Africa",
+		KE = "Africa",
+		MA = "Africa",
+		GH = "Africa",
+		DZ = "Africa",
+		TN = "Africa",
+		ET = "Africa",
+	}
+
+	local playerCountryCode = nil
+
+	task.spawn(function()
+		local ok, countryCode = pcall(function()
+			return game:GetService("LocalizationService"):GetCountryRegionForPlayerAsync(localPlayer)
+		end)
+
+		if ok and type(countryCode) == "string" and countryCode ~= "" then
+			playerCountryCode = countryCode
+		end
+	end)
+
+	local traitsCache = nil
+
+	function GameBridge.TraitInfo(traitName)
+		if not traitName or traitName == "" then
+			return nil
+		end
+
+		if not traitsCache then
+			local ok, traitsData = pcall(function()
+				return require(ReplicatedStorage.Datas.Traits)
+			end)
+
+			traitsCache = ok and type(traitsData) == "table" and traitsData or {}
+		end
+
+		local entry = traitsCache[traitName]
+
+		if type(entry) ~= "table" then
+			return nil
+		end
+
+		local icon = entry.Icon
+
+		if type(icon) ~= "string" or icon == "" then
+			return nil
+		end
+
+		return icon, typeof(entry.Color) == "Color3" and entry.Color or nil, entry.Display or traitName
+	end
+
+	function GameBridge.SplitTraits(traitString)
+		local list = {}
+
+		if type(traitString) == "string" then
+			for part in string.gmatch(traitString, "[^,]+") do
+				local trimmed = part:match("^%s*(.-)%s*$")
+
+				if trimmed ~= "" then
+					table.insert(list, trimmed)
+				end
+			end
+
+			return list
+		end
+
+		return list
+	end
+
+	function GameBridge.Region()
+		if not playerCountryCode then
+			return nil
+		end
+
+		return COUNTRY_TO_REGION[playerCountryCode] or playerCountryCode
+	end
+end
+
+function GameBridge.BrainrotAnimation(name)
+	if not name or name == "" then
+		return nil
+	end
+
+	local animations = ReplicatedStorage:FindFirstChild("Animations")
+	local animalAnimations = animations and animations:FindFirstChild("Animals")
+
+	if not animalAnimations then
+		return nil
+	end
+
+	local folder = animalAnimations:FindFirstChild(name)
+
+	if not folder then
+		folder = animalAnimations:FindFirstChild(getDisplayToKeyMap()[name] or "")
+	end
+
+	folder = folder and folder:FindFirstChild("Idle")
+
+	if folder and folder:IsA("Animation") and folder.AnimationId ~= "" then
+		return folder
+	end
+
+	return nil
+end
+
+function GameBridge.MyPlot()
+	local plots = workspace:FindFirstChild("Plots")
+
+	if not plots then
+		return nil
+	end
+
+	for _, plot in ipairs(plots:GetChildren()) do
+		local plotSign = plot:FindFirstChild("PlotSign")
+
+		if plotSign then
+			for _, descendant in ipairs(plotSign:GetDescendants()) do
+				if descendant:IsA("TextLabel") then
+					local ownerName = descendant.Text:match("^(.-)'s Base$")
+
+					if ownerName and (ownerName == localPlayer.Name or ownerName == localPlayer.DisplayName) then
+						return plot
+					end
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+do
+	local validBrainrots = nil
+
+	function GameBridge.IsRealBrainrot(name)
+		if type(name) ~= "string" or name == "" then
+			return false
+		end
+
+		if not validBrainrots then
+			validBrainrots = {}
+
+			local ok, animalsData = pcall(function()
+				return require(ReplicatedStorage.Datas.Animals)
+			end)
+
+			if ok and type(animalsData) == "table" then
+				for key, info in pairs(animalsData) do
+					validBrainrots[key] = true
+
+					if type(info) == "table" and type(info.DisplayName) == "string" then
+						validBrainrots[info.DisplayName] = true
+					end
+				end
+			end
+		end
+
+		if next(validBrainrots) == nil then
+			return true
+		end
+
+		return validBrainrots[name] == true
+	end
+end
+
+do
+	local IGNORED_PLOT_MODELS = {
+		Model = true,
+		FriendPanel = true,
+		CashPad = true,
+		PlotSign = true,
+	}
+
+	local function parseGenerationRate(text)
+		if not text then
+			return 0
+		end
+
+		local cleaned = text:lower():gsub("%$", ""):gsub("/s", ""):gsub("[%s,]", "")
+		local value = tonumber(cleaned:match("[%d%.]+")) or 0
+
+		if cleaned:find("k") then
+			value *= 1000
+		elseif cleaned:find("m") then
+			value *= 1000000
+		elseif cleaned:find("b") then
+			value *= 1e9
+		elseif cleaned:find("t") then
+			value *= 1e12
+		end
+
+		return math.floor(value)
+	end
+
+	function GameBridge.ScanInventory()
+		local myPlot = GameBridge.MyPlot()
+
+		if not myPlot then
+			return nil, "plot not found"
+		end
+
+		local candidates = {}
+
+		for _, child in ipairs(myPlot:GetChildren()) do
+			if child:IsA("Model") and not IGNORED_PLOT_MODELS[child.Name] then
+				local primaryPart = child.PrimaryPart or child:FindFirstChildWhichIsA("BasePart", true)
+
+				if primaryPart then
+					table.insert(candidates, {
+						obj = child,
+						pos = primaryPart.Position,
+						taken = false,
+					})
+				end
+			end
+		end
+
+		if #candidates == 0 then
+			return {}, nil
+		end
+
+		local debris = workspace:FindFirstChild("Debris")
+
+		if not debris then
+			return {}, "workspace.Debris missing"
+		end
+
+		local inventory = {}
+
+		for _, child in ipairs(debris:GetChildren()) do
+			if child.Name == "FastOverheadTemplate" and child:IsA("BasePart") then
+				local overhead = child:FindFirstChild("AnimalOverhead")
+				local displayNameLabel = overhead and overhead:FindFirstChild("DisplayName")
+
+				if displayNameLabel and displayNameLabel.Text ~= "" then
+					local name = displayNameLabel.Text
+					local bestDistance = nil
+					local bestCandidate = nil
+
+					for _, candidate in ipairs(candidates) do
+						if not candidate.taken and candidate.obj.Name == name then
+							local distance = (child.Position - candidate.pos).Magnitude
+
+							if distance <= CONFIG.matchRadius and (not bestDistance or distance < bestDistance) then
+								bestDistance = distance
+								bestCandidate = candidate
+							end
+						end
+					end
+
+					if bestCandidate then
+						bestCandidate.taken = true
+
+						local function getLabelText(labelName)
+							local label = overhead:FindFirstChild(labelName)
+							return label and label.Text ~= "" and label.Text or ""
+						end
+
+						local mutationAttribute = bestCandidate.obj:GetAttribute("Mutation") or bestCandidate.obj:GetAttribute("__mutation")
+						local mutation = ""
+
+						if mutationAttribute and tostring(mutationAttribute) ~= "" and tostring(mutationAttribute) ~= "None" then
+							mutation = tostring(mutationAttribute)
+						else
+							local mutationLabel = overhead:FindFirstChild("Mutation")
+							local hasLabel = mutationLabel and mutationLabel.Visible and mutationLabel.Text ~= "" and mutationLabel.Text ~= "None"
+
+							if hasLabel then
+								mutation = mutationLabel.Text
+							end
+						end
+
+						local traits = {}
+
+						for _, modelChild in ipairs(bestCandidate.obj:GetChildren()) do
+							local traitName = modelChild.Name:match("^_Trait%.(.+)$")
+
+							if traitName then
+								table.insert(traits, traitName)
+							end
+						end
+
+						table.sort(traits)
+
+						local generationText = getLabelText("Generation")
+
+						table.insert(inventory, {
+							name = name,
+							genText = generationText,
+							genValue = parseGenerationRate(generationText),
+							mutation = mutation,
+							rarity = getLabelText("Rarity"),
+							traits = table.concat(traits, ", "),
+							model = bestCandidate.obj,
+						})
+					end
+				end
+			end
+		end
+
+		table.sort(inventory, function(a, b)
+			return a.genValue > b.genValue
+		end)
+
+		return inventory, nil
+	end
+end
+
+--=====================================================================
+-- Trade remote discovery
+--=====================================================================
+
+local tradeRemoteFunction = nil
+local tradeRemoteUuid = nil
+do
+	local getupvalues_ = debug and debug.getupvalues or getupvalues
+	local getconstants_ = debug and debug.getconstants or getconstants
+
+	local function findNetRemoteUpvalue(fn, className)
+		if type(fn) ~= "function" or type(getupvalues_) ~= "function" then
+			return nil
+		end
+
+		local ok, upvalues = pcall(getupvalues_, fn)
+
+		if not ok or type(upvalues) ~= "table" then
+			return nil
+		end
+
+		local matchingIndices = {}
+
+		for index, value in pairs(upvalues) do
+			local isMatch = type(index) == "number"
+
+			if isMatch then
+				isMatch = typeof(value) == "Instance"
+			end
+
+			if isMatch and value:IsA(className) and net and value:IsDescendantOf(net) then
+				table.insert(matchingIndices, index)
+			end
+		end
+
+		if #matchingIndices == 0 then
+			return nil
+		end
+
+		table.sort(matchingIndices)
+
+		return upvalues[matchingIndices[1]]
+	end
+
+	if tradeController and type(tradeController.SendInvite) == "function" then
+		tradeRemoteFunction = findNetRemoteUpvalue(tradeController.SendInvite, "RemoteFunction")
+
+		if type(getconstants_) == "function" then
+			local ok, constants = pcall(getconstants_, tradeController.SendInvite)
+
+			if ok then
+				ok = type(constants) == "table"
+			end
+
+			if ok then
+				for _, constant in pairs(constants) do
+					if type(constant) == "string" and constant:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+						tradeRemoteUuid = constant
+						break
+					end
+				end
+			end
+		end
+	end
+end
+
+--=====================================================================
+-- Invite sending
+--=====================================================================
+
+do
+	local function formatInviteError(rawMessage, defaultCooldown)
+		local message = type(rawMessage) == "string" and rawMessage ~= "" and rawMessage or "Rejected"
+		local lowered = message:lower()
+		local extractedSeconds = lowered:find("cooldown", 1, true) and tonumber(message:match("[%d%.]+")) or nil
+
+		if not (lowered:find("pending trade", 1, true) or lowered:find("pending duel", 1, true) or lowered:find("pending invite", 1, true)) then
+			defaultCooldown = extractedSeconds
+		end
+
+		if defaultCooldown then
+			return string.format("Cooldown %ds", math.ceil(defaultCooldown))
+		end
+
+		return message
+	end
+
+	function GameBridge.SendInvite(kind, targetUserId, callback)
+		local done = callback or function() end
+
+		if kind ~= "duel" and kind ~= "trade" then
+			return done(false, "bad invite kind: " .. tostring(kind))
+		end
+
+		local userId = tonumber(targetUserId)
+
+		if not userId or userId <= 0 then
+			return done(false, "no userId on that listing")
+		end
+
+		if userId ~= localPlayer.UserId then
+			if kind == "duel" then
+				if not duelsController or type(duelsController.SendInvite) ~= "function" then
+					return done(false, "duels unavailable")
+				end
+
+				if type(duelsController.IsEnabled) == "function" then
+					local ok, enabled = pcall(function()
+						return duelsController:IsEnabled()
+					end)
+
+					if ok and not enabled then
+						return done(false, "duels disabled right now")
+					end
+				end
+
+				task.spawn(function()
+					local ok, success, reason = pcall(function()
+						return duelsController:SendInvite(userId)
+					end)
+
+					if not ok then
+						done(false, "invite errored")
+					elseif success == false then
+						done(false, formatInviteError(reason, CONFIG.duelCooldown))
+					else
+						done(true, "DUEL INVITE SENT")
+					end
+				end)
+
+				return
+			end
+
+			task.spawn(function()
+				if tradeController and type(tradeController.SendInvite) == "function" then
+					local resolved = false
+
+					local ok, success, reason = pcall(function()
+						return tradeController:SendInvite(userId, function(accepted, callbackReason)
+							if resolved then
+								return
+							end
+
+							resolved = true
+
+							if accepted == true then
+								done(true, "TRADE INVITE SENT")
+							else
+								done(false, formatInviteError(callbackReason, CONFIG.tradeCooldown))
+							end
+						end)
+					end)
+
+					if not ok then
+						if not resolved then
+							resolved = true
+							done(false, "invite errored")
+						end
+
+						return
+					end
+
+					if success == false and not resolved then
+						resolved = true
+						done(false, formatInviteError(reason, CONFIG.tradeCooldown))
+
+						return
+					end
+
+					task.delay(15, function()
+						if not resolved then
+							resolved = true
+							done(false, "invite timed out")
+						end
+					end)
+
+					return
+				end
+
+				if not tradeRemoteFunction then
+					return done(false, "no trade remote")
+				end
+
+				local ok, success, reason = pcall(function()
+					return tradeRemoteFunction:InvokeServer(tradeRemoteUuid, userId)
+				end)
+
+				if not ok then
+					done(false, "invite errored")
+				elseif success == false then
+					done(false, formatInviteError(reason, CONFIG.tradeCooldown))
+				else
+					done(true, "TRADE INVITE SENT")
+				end
+			end)
+
+			return
+		end
+
+		return done(false, "that's your own listing")
+	end
+end
+
+--=====================================================================
+-- Themes
+--=====================================================================
+
+local THEMES = {}
+
+THEMES[1] = {
+	name = "BLACK",
+	image = "rbxassetid://107853946060795",
+	imageTransparency = 0.15,
+	top = Color3.fromRGB(12, 12, 12),
+	bottom = Color3.fromRGB(0, 0, 0),
+	accent = Color3.fromRGB(245, 245, 245),
+	accentText = Color3.fromRGB(0, 0, 0),
+}
+
+THEMES[2] = {
+	name = "PINK",
+	image = "rbxassetid://111029623908235",
+	imageTransparency = 0.15,
+	top = Color3.fromRGB(36, 2, 20),
+	bottom = Color3.fromRGB(0, 0, 0),
+	accent = Color3.fromRGB(255, 20, 130),
+	accentText = Color3.fromRGB(255, 255, 255),
+}
+
+THEMES[3] = {
+	name = "BLUE",
+	image = "rbxassetid://111684797196115",
+	imageTransparency = 0.15,
+	top = Color3.fromRGB(6, 16, 40),
+	bottom = Color3.fromRGB(0, 0, 0),
+	accent = Color3.fromRGB(150, 200, 240),
+	accentText = Color3.fromRGB(0, 0, 0),
+}
+
+THEMES[4] = {
+	name = "NONE",
+	image = "",
+	imageTransparency = 0,
+	top = Color3.fromRGB(0, 0, 0),
+	bottom = Color3.fromRGB(0, 0, 0),
+	accent = Color3.fromRGB(255, 255, 255),
+	accentText = Color3.fromRGB(0, 0, 0),
+}
+
+--=====================================================================
+-- Palette + persisted state
+--=====================================================================
+
+local COLOR_BLACK = Color3.fromRGB(0, 0, 0)
+local COLOR_WHITE = Color3.fromRGB(255, 255, 255)
+local COLOR_TEXT_PRIMARY = Color3.fromRGB(233, 233, 240)
+local COLOR_TEXT_SECONDARY = Color3.fromRGB(155, 155, 166)
+local COLOR_TEXT_MUTED = Color3.fromRGB(104, 104, 114)
+local COLOR_SURFACE = Color3.fromRGB(18, 18, 20)
+local COLOR_WARNING = Color3.fromRGB(255, 185, 90)
+local COLOR_DANGER = Color3.fromRGB(235, 20, 26)
+local COLOR_SUCCESS = Color3.fromRGB(64, 214, 110)
+
+local currentThemeIndex = 1
+local savedWindowPos = nil
+local isMinimized = false
+local selectedTab = "DUELS"
+
+local saveConfig
+do
+	local function isValidPositionArray(pos)
+		if type(pos) ~= "table" then
+			return false
+		end
+
+		for i = 1, 4 do
+			if type(pos[i]) ~= "number" or pos[i] ~= pos[i] then
+				return false
+			end
+		end
+
+		return true
+	end
+
+	local saveScheduled = false
+
+	saveConfig = function()
+		if saveScheduled then
+			return
+		end
+
+		saveScheduled = true
+
+		task.delay(0.2, function()
+			saveScheduled = false
+
+			local configData = {
+				theme = currentThemeIndex,
+				pos = savedWindowPos,
+				minimized = isMinimized,
+				tab = selectedTab,
+			}
+
+			if not pcall(function()
+				writefile("KavalHubPlazaFinder.json", HttpService:JSONEncode(configData))
+			end) then
+				_G.AceDuelsFinderConfig = configData
+			end
+		end)
+	end
+
+	local data = nil
+
+	if not pcall(function()
+		if isfile and isfile("KavalHubPlazaFinder.json") then
+			data = HttpService:JSONDecode(readfile("KavalHubPlazaFinder.json"))
+		end
+	end) or not data then
+		data = _G.AceDuelsFinderConfig
+	end
+
+	if type(data) == "table" then
+		if type(data.theme) == "number" and THEMES[data.theme] then
+			currentThemeIndex = data.theme
+		end
+
+		if data.minimized ~= nil then
+			isMinimized = data.minimized
+		end
+
+		if data.tab == "DUELS" or data.tab == "TRADES" then
+			selectedTab = data.tab
+		end
+
+		if isValidPositionArray(data.pos) then
+			savedWindowPos = data.pos
+		end
+	end
+end
+
+local function getActiveTheme()
+	return THEMES[currentThemeIndex] or THEMES[1]
+end
+
+--=====================================================================
+-- UI helpers
+--=====================================================================
+
+local function createInstance(className, properties, parent)
+	local instance = Instance.new(className)
+
+	for key, value in pairs(properties or {}) do
+		instance[key] = value
+	end
+
+	instance.Parent = parent
+
+	return instance
+end
+
+local function addCorner(parent, radius)
+	return createInstance("UICorner", {
+		CornerRadius = UDim.new(0, radius or 8),
+	}, parent)
+end
+
+local function addStroke(parent, color, thickness, transparency)
+	return createInstance("UIStroke", {
+		Color = color or COLOR_BLACK,
+		Thickness = thickness or 1,
+		Transparency = transparency or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, parent)
+end
+
+local function tweenObject(instance, goals, duration, easingStyle, easingDirection)
+	if not instance or not instance.Parent then
+		return
+	end
+
+	TweenService:Create(
+		instance,
+		TweenInfo.new(duration or 0.18, easingStyle or Enum.EasingStyle.Quint, easingDirection or Enum.EasingDirection.Out),
+		goals
+	):Play()
+end
+
+local function playShimmer(target)
+	if not target or not target.Parent then
+		return
+	end
+
+	local shimmer = createInstance("Frame", {
+		BackgroundColor3 = Color3.fromRGB(190, 190, 205),
+		BackgroundTransparency = 0.86,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 30, 1, 0),
+		Position = UDim2.new(0, -36, 0, 0),
+		ZIndex = target.ZIndex + 2,
+	}, target)
+
+	createInstance("UIGradient", {
+		Rotation = 20,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, 0.25),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+	}, shimmer)
+
+	tweenObject(shimmer, {
+		Position = UDim2.new(1, 20, 0, 0),
+		BackgroundTransparency = 0.96,
+	}, 0.34, Enum.EasingStyle.Quad)
+
+	task.delay(0.38, function()
+		if shimmer then
+			shimmer:Destroy()
+		end
+	end)
+end
+
+local function attachButtonFeel(button)
+	local uiScale = createInstance("UIScale", { Scale = 1 }, button)
+
+	button.MouseButton1Down:Connect(function()
+		tweenObject(uiScale, { Scale = 0.96 }, 0.08, Enum.EasingStyle.Quad)
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		tweenObject(uiScale, { Scale = 1 }, 0.16, Enum.EasingStyle.Back)
+	end)
+
+	button.MouseLeave:Connect(function()
+		tweenObject(uiScale, { Scale = 1 }, 0.16, Enum.EasingStyle.Back)
+	end)
+
+	button.MouseButton1Click:Connect(function()
+		playShimmer(button)
+	end)
+
+	return uiScale
+end
+
+local function formatCurrency(amount)
+	local num = tonumber(amount) or 0
+
+	if num >= 1e15 then
+		return string.format("$%.1fQa", num / 1e15)
+	end
+
+	if num >= 1e12 then
+		return string.format("$%.1fT", num / 1e12)
+	end
+
+	if num >= 1e9 then
+		return string.format("$%.1fB", num / 1e9)
+	end
+
+	if num >= 1000000 then
+		return string.format("$%.1fM", num / 1000000)
+	end
+
+	if num >= 1000 then
+		return string.format("$%.1fK", num / 1000)
+	end
+
+	return "$" .. math.floor(num)
+end
+
+--=====================================================================
+-- Rotating brainrot previews
+--=====================================================================
+
+local STRIPPED_PREVIEW_CLASSES = {
+	"Script",
+	"LocalScript",
+	"Sound",
+	"ParticleEmitter",
+	"BillboardGui",
+	"SurfaceGui",
+	"Beam",
+	"Trail",
+	"Fire",
+	"Smoke",
+	"Sparkles",
+	"Light",
+}
+
+local spinningViewports = {}
+
+RunService.RenderStepped:Connect(function(deltaTime)
+	for i = #spinningViewports, 1, -1 do
+		local entry = spinningViewports[i]
+
+		if not entry.Viewport.Parent or not entry.Camera.Parent then
+			table.remove(spinningViewports, i)
+		else
+			entry.Angle = entry.Angle + deltaTime * entry.Speed
+			local offsetX = math.sin(entry.Angle) * entry.Radius
+			local offsetZ = math.cos(entry.Angle) * entry.Radius
+			local offsetY = math.sin(entry.Angle * 2) * entry.Float
+
+			entry.Camera.CFrame = CFrame.new(
+				Vector3.new(entry.Center.X + offsetX, entry.Center.Y + offsetY, entry.Center.Z + offsetZ),
+				entry.Center
+			)
+		end
+	end
+end)
+
+local previewTaskQueue = {}
+local isProcessingPreviewQueue = false
+
+local function enqueuePreviewTask(taskFn)
+	table.insert(previewTaskQueue, taskFn)
+
+	if isProcessingPreviewQueue then
+		return
+	end
+
+	isProcessingPreviewQueue = true
+
+	task.spawn(function()
+		while #previewTaskQueue > 0 do
+			local nextTask = table.remove(previewTaskQueue, 1)
+
+			if nextTask then
+				task.spawn(nextTask)
+			end
+
+			RunService.Heartbeat:Wait()
+		end
+
+		isProcessingPreviewQueue = false
+	end)
+end
+
+local function createBrainrotPreview(parent, itemName, width, height, cornerRadius, mutationName)
+	height = height or width
+
+	local previewFrame = createInstance("Frame", {
+		Name = "Preview",
+		Size = UDim2.new(0, width, 0, height),
+		BackgroundColor3 = Color3.fromRGB(8, 8, 9),
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		ZIndex = 6,
+	}, parent)
+
+	addCorner(previewFrame, cornerRadius or 8)
+	addStroke(previewFrame, COLOR_WHITE, 1, 0.84)
+
+	local cleanName = (itemName or "?"):gsub("[^%w ]", "")
+	local firstChar, secondChar = cleanName:match("^(%S)%S*%s+(%S)")
+	local initials = string.upper(firstChar and (firstChar .. secondChar) or cleanName:sub(1, 2))
+
+	local fallbackLabel = createInstance("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = initials,
+		TextColor3 = getActiveTheme().accent,
+		Font = Enum.Font.GothamBlack,
+		TextSize = math.floor(math.min(width, height) * 0.34),
+		ZIndex = 7,
+	}, previewFrame)
+
+	fallbackLabel.TextTransparency = 0.25
+
+	local viewport = createInstance("ViewportFrame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Ambient = Color3.fromRGB(190, 190, 190),
+		LightColor = Color3.fromRGB(255, 255, 255),
+		LightDirection = Vector3.new(-1, -1.2, -0.8),
+		ZIndex = 8,
+		Visible = false,
+	}, previewFrame)
+
+	enqueuePreviewTask(function()
+		if not previewFrame.Parent then
+			return
+		end
+
+		local sourceModel = GameBridge.BrainrotModel(itemName)
+
+		if not sourceModel or not previewFrame.Parent then
+			return
+		end
+
+		local ok, clone = pcall(function()
+			sourceModel.Archivable = true
+			return sourceModel:Clone()
+		end)
+
+		if not ok or not clone then
+			return
+		end
+
+		for _, descendant in ipairs(clone:GetDescendants()) do
+			for _, className in ipairs(STRIPPED_PREVIEW_CLASSES) do
+				if descendant:IsA(className) then
+					descendant:Destroy()
+					break
+				end
+			end
+		end
+
+		local mutation = mutationName
+
+		if mutation and mutation ~= "" and mutation ~= "None" and mutation ~= "Default" and animalsShared and type(animalsShared.ApplyMutation) == "function" then
+			local appliedOk, cleanup = pcall(function()
+				return animalsShared:ApplyMutation(clone, itemName, mutation)
+			end)
+
+			if appliedOk and cleanup then
+				previewFrame.Destroying:Connect(function()
+					if typeof(cleanup) == "RBXScriptConnection" then
+						cleanup:Disconnect()
+					elseif typeof(cleanup) == "Instance" then
+						cleanup:Destroy()
+					elseif type(cleanup) == "function" then
+						pcall(cleanup)
+					end
+				end)
+			end
+		end
+
+		local primaryPart = clone.PrimaryPart or clone:FindFirstChildWhichIsA("BasePart", true)
+
+		if not primaryPart then
+			clone:Destroy()
+			return
+		end
+
+		clone.PrimaryPart = primaryPart
+
+		pcall(function()
+			clone:PivotTo(CFrame.new(0, 0, 0))
+		end)
+
+		clone.Parent = createInstance("WorldModel", {}, viewport)
+
+		local camera = createInstance("Camera", { FieldOfView = 50 }, viewport)
+		viewport.CurrentCamera = camera
+
+		local boundingCFrame, boundingSize = clone:GetBoundingBox()
+		local idleAnimation = GameBridge.BrainrotAnimation(itemName)
+		local hasIdleAnimation = idleAnimation ~= nil
+		local aspect = height > 0 and (width / height) or 1
+		local horizontalExtent = (hasIdleAnimation and boundingSize.X or math.sqrt(boundingSize.X * boundingSize.X + boundingSize.Z * boundingSize.Z)) * 0.5 / 0.46630765815499858 * aspect
+		local cameraDistance = math.max(boundingSize.Y * 0.5 / 0.46630765815499858, horizontalExtent, 0.6) * 1.15
+		local centerPos = boundingCFrame.Position
+		local isAnimated = false
+
+		if idleAnimation then
+			isAnimated = pcall(function()
+				local existingController = clone:FindFirstChild("AnimationController")
+
+				if existingController then
+					existingController:Destroy()
+				end
+
+				local humanoid = createInstance("Humanoid", {
+					Name = "AnimationController",
+					EvaluateStateMachine = false,
+					PlatformStand = true,
+					DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None,
+				}, clone)
+
+				local animTrack = createInstance("Animator", {}, humanoid):LoadAnimation(idleAnimation)
+				animTrack.Looped = true
+				animTrack.Priority = Enum.AnimationPriority.Idle
+				animTrack:Play()
+
+				previewFrame.Destroying:Connect(function()
+					pcall(function()
+						animTrack:Stop()
+					end)
+				end)
+
+				task.spawn(function()
+					for _ = 1, 50 do
+						if not previewFrame.Parent then
+							return
+						end
+
+						if animTrack.Length > 0 then
+							pcall(function()
+								animTrack.TimePosition = math.random() * animTrack.Length
+							end)
+
+							return
+						end
+
+						task.wait(0.05)
+					end
+				end)
+			end)
+		end
+
+		local initialAngle = isAnimated and math.pi or 3.4557519189487724
+
+		camera.CFrame = CFrame.new(
+			Vector3.new(centerPos.X + math.sin(initialAngle) * cameraDistance, centerPos.Y, centerPos.Z + math.cos(initialAngle) * cameraDistance),
+			centerPos
+		)
+
+		if not isAnimated then
+			table.insert(spinningViewports, {
+				Viewport = viewport,
+				Camera = camera,
+				Center = centerPos,
+				Radius = cameraDistance,
+				Angle = initialAngle,
+				Speed = 0.62,
+				Float = math.max(boundingSize.Y * 0.02, 0.015),
+			})
+		end
+
+		if previewFrame.Parent then
+			viewport.Visible = true
+			fallbackLabel.Visible = false
+		end
+	end)
+
+	return previewFrame
+end
+
+--=====================================================================
+-- Root screen gui
+--=====================================================================
+
+local uiScaleFactor
+do
+	local isTouchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+	local smallMobileScale = isTouchOnly and math.min(viewportSize.X, viewportSize.Y) < 600 and 0.78
+
+	if smallMobileScale then
+		uiScaleFactor = smallMobileScale
+	else
+		uiScaleFactor = isTouchOnly and 0.88 or 1
+	end
+end
+
+for _, container in ipairs({ CoreGui, playerGui }) do
+	pcall(function()
+		local existing = container:FindFirstChild("AceDuelsFinder")
+
+		if existing then
+			existing:Destroy()
+		end
+	end)
+end
+
+for _, child in ipairs(playerGui:GetChildren()) do
+	if child.Name == "AceFinderPicker" then
+		pcall(function()
+			child:Destroy()
+		end)
+	end
+end
+
+local screenGui = createInstance("ScreenGui", {
+	Name = "AceDuelsFinder",
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	IgnoreGuiInset = true,
+	DisplayOrder = 999,
+}, playerGui)
+
+local mainWindow = createInstance("Frame", {
+	Name = "Main",
+	Size = UDim2.new(0, 356, 0, 452),
+	Position = UDim2.new(0.5, -178, 0.5, -226),
+	BackgroundColor3 = COLOR_WHITE,
+	BorderSizePixel = 0,
+	Active = true,
+	ClipsDescendants = true,
+}, screenGui)
+
+addCorner(mainWindow, 16)
+
+local windowGradient = createInstance("UIGradient", { Rotation = 90 }, mainWindow)
+
+addStroke(mainWindow, COLOR_BLACK, 3, 0)
+createInstance("UIScale", { Scale = uiScaleFactor }, mainWindow)
+
+if savedWindowPos then
+	mainWindow.Position = UDim2.new(savedWindowPos[1], savedWindowPos[2], savedWindowPos[3], savedWindowPos[4])
+end
+
+local windowArt = createInstance("ImageLabel", {
+	Name = "Art",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Image = "",
+	ImageTransparency = 0.15,
+	ScaleType = Enum.ScaleType.Crop,
+	Visible = false,
+	ZIndex = 1,
+}, mainWindow)
+
+addCorner(windowArt, 16)
+
+do
+	local veil = createInstance("Frame", {
+		Name = "Veil",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = COLOR_BLACK,
+		BackgroundTransparency = 0.55,
+		BorderSizePixel = 0,
+		ZIndex = 2,
+	}, mainWindow)
+
+	addCorner(veil, 16)
+
+	createInstance("UIGradient", {
+		Rotation = 8,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.45),
+			NumberSequenceKeypoint.new(0.45, 0.22),
+			NumberSequenceKeypoint.new(1, 0.12),
+		}),
+	}, veil)
+end
+
+--=====================================================================
+-- Window placement
+--=====================================================================
+
+local function recordWindowPosition()
+	local pos = mainWindow.Position
+	savedWindowPos = { pos.X.Scale, pos.X.Offset, pos.Y.Scale, pos.Y.Offset }
+	saveConfig()
+end
+
+local function clampWindowToScreen(shouldSave)
+	local screenSize = screenGui.AbsoluteSize
+	local windowSize = mainWindow.AbsoluteSize
+
+	if screenSize.X <= 0 or screenSize.Y <= 0 or windowSize.X <= 0 then
+		return
+	end
+
+	local pos = mainWindow.Position
+	local currentX = pos.X.Scale * screenSize.X + pos.X.Offset
+	local currentY = pos.Y.Scale * screenSize.Y + pos.Y.Offset
+	local clampedX = math.clamp(currentX, 0, math.max(screenSize.X - windowSize.X, 0))
+	local clampedY = math.clamp(currentY, 0, math.max(screenSize.Y - windowSize.Y, 0))
+
+	if clampedX ~= currentX or clampedY ~= currentY then
+		mainWindow.Position = UDim2.new(0, clampedX, 0, clampedY)
+
+		if shouldSave then
+			recordWindowPosition()
+		end
+	end
+end
+
+task.defer(function()
+	clampWindowToScreen(savedWindowPos ~= nil)
+end)
+
+screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	clampWindowToScreen(false)
+end)
+
+--=====================================================================
+-- Header
+--=====================================================================
+
+local headerFrame = createInstance("Frame", {
+	Name = "Header",
+	Size = UDim2.new(1, 0, 0, 54),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Active = true,
+	ZIndex = 3,
+}, mainWindow)
+
+local titleLabel
+local hideButton
+
+do
+	titleLabel = createInstance("TextLabel", {
+		Name = "Title",
+		Size = UDim2.new(1, -96, 0, 22),
+		Position = UDim2.new(0, 14, 0, 8),
+		BackgroundTransparency = 1,
+		Text = "KavalHub FINDER",
+		TextColor3 = COLOR_WHITE,
+		TextStrokeColor3 = COLOR_BLACK,
+		TextStrokeTransparency = 0.55,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 17,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 4,
+	}, headerFrame)
+
+	createInstance("UIStroke", {
+		Color = COLOR_BLACK,
+		Thickness = 1.6,
+		Transparency = 0.35,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+	}, titleLabel)
+end
+
+createInstance("TextLabel", {
+	Name = "Watermark",
+	Size = UDim2.new(1, -96, 0, 14),
+	Position = UDim2.new(0, 14, 0, 30),
+	BackgroundTransparency = 1,
+	Text = "discord.gg/u6sM2beDNx",
+	TextColor3 = COLOR_WHITE,
+	TextStrokeColor3 = COLOR_BLACK,
+	TextStrokeTransparency = 0.5,
+	Font = Enum.Font.GothamBold,
+	TextSize = 11,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 4,
+}, headerFrame)
+
+do
+	local function createHeaderButton(width, offsetX, labelText, textSize)
+		local btn = createInstance("TextButton", {
+			Size = UDim2.new(0, width, 0, 24),
+			Position = UDim2.new(1, offsetX, 0, 15),
+			BackgroundColor3 = COLOR_BLACK,
+			BorderSizePixel = 0,
+			AutoButtonColor = false,
+			Text = labelText,
+			TextColor3 = COLOR_WHITE,
+			TextStrokeTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = textSize or 12,
+			ZIndex = 4,
+		}, headerFrame)
+
+		addCorner(btn, 8)
+
+		btn.MouseEnter:Connect(function()
+			tweenObject(btn, { BackgroundColor3 = Color3.fromRGB(30, 30, 30) }, 0.15)
+		end)
+
+		btn.MouseLeave:Connect(function()
+			tweenObject(btn, { BackgroundColor3 = COLOR_BLACK }, 0.15)
+		end)
+
+		return btn
+	end
+
+	hideButton = createHeaderButton(48, -62, "Hide")
+end
+
+local headerDivider = createInstance("Frame", {
+	Name = "Divider",
+	Size = UDim2.new(1, -28, 0, 1),
+	Position = UDim2.new(0, 14, 0, 54),
+	BackgroundColor3 = COLOR_WHITE,
+	BackgroundTransparency = 0.6,
+	BorderSizePixel = 0,
+	ZIndex = 3,
+}, mainWindow)
+
+local bodyFrame = createInstance("Frame", {
+	Name = "Body",
+	Size = UDim2.new(1, 0, 1, -100),
+	Position = UDim2.new(0, 0, 0, 64),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ZIndex = 3,
+}, mainWindow)
+
+--=====================================================================
+-- Tabs
+--=====================================================================
+
+local tabButtons = {}
+local activeTab = selectedTab
+
+do
+	local tabRow = createInstance("Frame", {
+		Name = "TabRow",
+		Size = UDim2.new(1, -28, 0, 28),
+		Position = UDim2.new(0, 14, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+	}, bodyFrame)
+
+	createInstance("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 6),
+	}, tabRow)
+
+	for index, tabName in ipairs({ "DUELS", "TRADES" }) do
+		local tabBtn = createInstance("TextButton", {
+			Name = tabName,
+			LayoutOrder = index,
+			Size = UDim2.new(0.5, -3, 1, 0),
+			BackgroundColor3 = COLOR_BLACK,
+			BackgroundTransparency = 0.45,
+			BorderSizePixel = 0,
+			AutoButtonColor = false,
+			Text = tabName,
+			TextColor3 = COLOR_TEXT_SECONDARY,
+			TextStrokeTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			ZIndex = 5,
+		}, tabRow)
+
+		addCorner(tabBtn, 9)
+
+		local badgeLabel = createInstance("TextLabel", {
+			Name = "Badge",
+			Size = UDim2.new(0, 15, 0, 15),
+			Position = UDim2.new(1, -19, 0.5, -7.5),
+			BackgroundColor3 = COLOR_DANGER,
+			Text = "0",
+			TextColor3 = COLOR_WHITE,
+			Font = Enum.Font.GothamBold,
+			TextSize = 9,
+			Visible = false,
+			ZIndex = 7,
+		}, tabBtn)
+
+		addCorner(badgeLabel, 8)
+
+		tabButtons[tabName] = { btn = tabBtn, badge = badgeLabel }
+	end
+end
+
+--=====================================================================
+-- Search box
+--=====================================================================
+
+local searchBox
+do
+	local filterRow = createInstance("Frame", {
+		Name = "FilterRow",
+		Size = UDim2.new(1, -28, 0, 30),
+		Position = UDim2.new(0, 14, 0, 34),
+		BackgroundColor3 = COLOR_SURFACE,
+		BackgroundTransparency = 0.16,
+		BorderSizePixel = 0,
+		ZIndex = 4,
+	}, bodyFrame)
+
+	addCorner(filterRow, 9)
+	addStroke(filterRow, COLOR_WHITE, 1, 0.82)
+
+	createInstance("TextLabel", {
+		Size = UDim2.new(0, 22, 1, 0),
+		Position = UDim2.new(0, 8, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "ðŸ”",
+		TextSize = 11,
+		ZIndex = 5,
+	}, filterRow)
+
+	searchBox = createInstance("TextBox", {
+		Name = "Search",
+		Size = UDim2.new(1, -40, 1, 0),
+		Position = UDim2.new(0, 32, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "",
+		PlaceholderText = "Search player or brainrot...",
+		PlaceholderColor3 = COLOR_TEXT_MUTED,
+		TextColor3 = COLOR_TEXT_PRIMARY,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ClearTextOnFocus = false,
+		ZIndex = 5,
+	}, filterRow)
+end
+
+--=====================================================================
+-- Listing scroll frames
+--=====================================================================
+
+local duelsScrollingFrame, tradesScrollingFrame
+do
+	local function createListingScrollFrame()
+		local scrollFrame = createInstance("ScrollingFrame", {
+			Size = UDim2.new(1, -28, 1, -70),
+			Position = UDim2.new(0, 14, 0, 70),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = 4,
+			ScrollBarThickness = 2,
+			ScrollBarImageColor3 = Color3.fromRGB(120, 120, 130),
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+		}, bodyFrame)
+
+		local listLayout = createInstance("UIListLayout", {
+			Padding = UDim.new(0, 6),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}, scrollFrame)
+
+		createInstance("UIPadding", {
+			PaddingRight = UDim.new(0, 8),
+		}, scrollFrame)
+
+		listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+			scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 8)
+		end)
+
+		return scrollFrame
+	end
+
+	duelsScrollingFrame = createListingScrollFrame()
+	tradesScrollingFrame = createListingScrollFrame()
+end
+
+local tabPages = {
+	DUELS = duelsScrollingFrame,
+	TRADES = tradesScrollingFrame,
+}
+
+local duelsEmptyLabel, tradesEmptyLabel
+do
+	local function createEmptyStateLabel(parent, message)
+		return createInstance("TextLabel", {
+			Name = "Empty",
+			Text = message,
+			TextColor3 = COLOR_TEXT_MUTED,
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			Size = UDim2.new(1, 0, 0, 70),
+			BackgroundTransparency = 1,
+			LayoutOrder = 999999,
+			TextWrapped = true,
+			ZIndex = 5,
+		}, parent)
+	end
+
+	duelsEmptyLabel = createEmptyStateLabel(duelsScrollingFrame, "NO DUEL LISTINGS\nwaiting for players...")
+	tradesEmptyLabel = createEmptyStateLabel(tradesScrollingFrame, "NO TRADE LISTINGS\nwaiting for players...")
+end
+
+--=====================================================================
+-- Footer / status bar / toast
+--=====================================================================
+
+local footerFrame = createInstance("Frame", {
+	Name = "Footer",
+	Size = UDim2.new(1, -28, 0, 28),
+	Position = UDim2.new(0, 14, 1, -32),
+	BackgroundTransparency = 1,
+	ZIndex = 4,
+}, mainWindow)
+
+local themeButton = createInstance("TextButton", {
+	Name = "ThemeBtn",
+	Size = UDim2.new(1, -150, 1, 0),
+	Position = UDim2.new(0, 0, 0, 0),
+	BackgroundColor3 = COLOR_BLACK,
+	BackgroundTransparency = 0.45,
+	BorderSizePixel = 0,
+	AutoButtonColor = false,
+	Text = "Color Theme: BLACK",
+	TextColor3 = COLOR_WHITE,
+	TextStrokeTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 11,
+	ZIndex = 5,
+}, footerFrame)
+
+addCorner(themeButton, 9)
+
+themeButton.MouseEnter:Connect(function()
+	tweenObject(themeButton, { BackgroundTransparency = 0.33 }, 0.15)
+end)
+
+themeButton.MouseLeave:Connect(function()
+	tweenObject(themeButton, { BackgroundTransparency = 0.45 }, 0.15)
+end)
+
+attachButtonFeel(themeButton)
+
+local statusDotFrame, statusTextLabel, statusCountLabel
+do
+	local statusContainer = createInstance("Frame", {
+		Name = "Status",
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.new(0, 0, 1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = COLOR_BLACK,
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		ZIndex = 5,
+	}, footerFrame)
+
+	addCorner(statusContainer, 9)
+
+	createInstance("UIPadding", {
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 11),
+	}, statusContainer)
+
+	createInstance("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 7),
+	}, statusContainer)
+
+	local dotHolder = createInstance("Frame", {
+		Name = "Dot",
+		LayoutOrder = 1,
+		Size = UDim2.new(0, 7, 0, 7),
+		BackgroundTransparency = 1,
+		ZIndex = 6,
+	}, statusContainer)
+
+	statusDotFrame = createInstance("Frame", {
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = COLOR_DANGER,
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, dotHolder)
+
+	addCorner(statusDotFrame, 4)
+
+	statusTextLabel = createInstance("TextLabel", {
+		Name = "StatusLbl",
+		LayoutOrder = 2,
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		Text = "OFFLINE",
+		TextColor3 = COLOR_TEXT_SECONDARY,
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 6,
+	}, statusContainer)
+
+	statusCountLabel = createInstance("TextLabel", {
+		Name = "StatusCount",
+		LayoutOrder = 3,
+		Visible = false,
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		Text = "",
+		TextColor3 = COLOR_SUCCESS,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 6,
+	}, statusContainer)
+end
+
+local showToast
+do
+	local toastFrame = createInstance("Frame", {
+		Name = "Toast",
+		Size = UDim2.new(1, -28, 0, 30),
+		Position = UDim2.new(0, 14, 1, -70),
+		BackgroundColor3 = COLOR_BLACK,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 40,
+	}, mainWindow)
+
+	addCorner(toastFrame, 9)
+
+	local toastStroke = addStroke(toastFrame, COLOR_WHITE, 1, 0.5)
+
+	local toastLabel = createInstance("TextLabel", {
+		Size = UDim2.new(1, -18, 1, 0),
+		Position = UDim2.new(0, 9, 0, 0),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 41,
+	}, toastFrame)
+
+	local toastSerial = 0
+
+	showToast = function(message, color)
+		toastSerial += 1
+		local currentSerial = toastSerial
+
+		toastLabel.Text = tostring(message)
+		toastLabel.TextColor3 = color or COLOR_TEXT_PRIMARY
+		toastStroke.Color = color or getActiveTheme().accent
+		toastFrame.Visible = true
+		toastFrame.BackgroundTransparency = 0.06
+		toastStroke.Transparency = 0.35
+		playShimmer(toastFrame)
+
+		task.delay(2.2, function()
+			if toastSerial ~= currentSerial then
+				return
+			end
+
+			tweenObject(toastFrame, { BackgroundTransparency = 1 }, 0.35)
+			tweenObject(toastStroke, { Transparency = 1 }, 0.35)
+
+			task.delay(0.4, function()
+				if toastSerial == currentSerial then
+					toastFrame.Visible = false
+				end
+			end)
+		end)
+	end
+end
+
+--=====================================================================
+-- Theme binding registries
+--=====================================================================
+
+local themedAccentButtons = {}
+local themedAccentProperties = {}
+
+local function bindThemeAccentProperty(instance, property)
+	table.insert(themedAccentProperties, { object = instance, property = property })
+end
+
+local function bindThemeAccentButton(button)
+	table.insert(themedAccentButtons, button)
+	bindThemeAccentProperty(button, "BackgroundColor3")
+end
+
+--=====================================================================
+-- Listing card helpers
+--=====================================================================
+
+local avatarThumbnailCache = {}
+
+local CardHelpers = {
+	WIDTH = 320,
+	textWidth = function(text, textSize, font)
+		local ok, width = pcall(function()
+			return game:GetService("TextService"):GetTextSize(text, textSize, font, Vector2.new(1000, 40)).X
+		end)
+
+		return ok and width and math.ceil(width) or nil
+	end,
+	traits = function(listing)
+		return type(listing.traitList) == "string" and listing.traitList or ""
+	end,
+	where = function(listing)
+		local parts = {}
+
+		if type(listing.region) == "string" and listing.region ~= "" then
+			table.insert(parts, listing.region)
+		end
+
+		local ping = tonumber(listing.pingMs)
+
+		if ping and ping > 0 then
+			table.insert(parts, string.format("~%dms", math.floor(ping + 0.5)))
+		end
+
+		return table.concat(parts, "  Â·  ")
+	end,
+	avatar = function(userId, imageLabel)
+		local id = tonumber(userId)
+
+		if not id or id <= 0 then
+			return
+		end
+
+		if avatarThumbnailCache[id] then
+			imageLabel.Image = avatarThumbnailCache[id]
+			return
+		end
+
+		task.spawn(function()
+			local ok, thumbnailUrl = pcall(function()
+				return Players:GetUserThumbnailAsync(id, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+			end)
+
+			if ok and type(thumbnailUrl) == "string" and thumbnailUrl ~= "" then
+				avatarThumbnailCache[id] = thumbnailUrl
+
+				if imageLabel.Parent then
+					imageLabel.Image = thumbnailUrl
+				end
+			end
+		end)
+	end,
+}
+
+function CardHelpers.metaStrip(parent, mutationName, traitString, zIndex)
+	local stripFrame = createInstance("Frame", {
+		Name = "Meta",
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		ZIndex = zIndex,
+	}, parent)
+
+	createInstance("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 5),
+	}, stripFrame)
+
+	local order = 0
+
+	local function addPill(label, color)
+		order += 1
+
+		local pill = createInstance("TextLabel", {
+			LayoutOrder = order,
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 0, 14),
+			BackgroundColor3 = COLOR_BLACK,
+			BackgroundTransparency = 0.25,
+			Text = string.upper(label),
+			TextColor3 = color,
+			Font = Enum.Font.GothamBold,
+			TextSize = 8,
+			ZIndex = zIndex + 1,
+		}, stripFrame)
+
+		addCorner(pill, 4)
+		addStroke(pill, color, 1, 0.55)
+		createInstance("UIPadding", {
+			PaddingLeft = UDim.new(0, 5),
+			PaddingRight = UDim.new(0, 5),
+		}, pill)
+
+		return pill
+	end
+
+	local validMutation = mutationName and mutationName ~= "" and mutationName ~= "None" and mutationName or nil
+
+	addPill(
+		validMutation or "NORMAL",
+		validMutation and (GameBridge.MutationColor(validMutation) or getActiveTheme().accent) or COLOR_TEXT_SECONDARY
+	)
+
+	local traits = GameBridge.SplitTraits(traitString)
+	local visibleCount = math.min(#traits, 4)
+
+	for i = 1, visibleCount do
+		local traitName = traits[i]
+		local iconAsset, traitColor = GameBridge.TraitInfo(traitName)
+
+		if iconAsset then
+			order += 1
+
+			createInstance("ImageLabel", {
+				Name = "Trait_" .. traitName,
+				LayoutOrder = order,
+				Size = UDim2.new(0, 14, 0, 14),
+				BackgroundTransparency = 1,
+				Image = iconAsset,
+				ScaleType = Enum.ScaleType.Fit,
+				ZIndex = zIndex + 1,
+			}, stripFrame)
+		else
+			addPill(traitName, traitColor or COLOR_TEXT_MUTED)
+		end
+	end
+
+	if visibleCount < #traits then
+		addPill("+" .. (#traits - visibleCount), COLOR_TEXT_MUTED)
+	end
+
+	return stripFrame
+end
+
+local function createListingCard(parent, listing, kind, onActionClick, isMine)
+	local theme = getActiveTheme()
+	local traitsStr = CardHelpers.traits(listing)
+	local locationStr = CardHelpers.where(listing)
+	local valueText = listing.valueText and listing.valueText ~= "" and listing.valueText
+
+	if not valueText then
+		valueText = (listing.valueNumber or 0) > 0 and formatCurrency(listing.valueNumber) or ""
+	end
+
+	local card = createInstance("Frame", {
+		Name = "Card_" .. tostring(listing.listingId),
+		Size = UDim2.new(1, 0, 0, 88),
+		BackgroundColor3 = COLOR_SURFACE,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		ZIndex = 5,
+	}, parent)
+
+	addCorner(card, 10)
+
+	local cardStroke = addStroke(card, COLOR_WHITE, 1, 0.82)
+	tweenObject(card, { BackgroundTransparency = 0.16 }, 0.2)
+
+	local accentBar = createInstance("Frame", {
+		Name = "AccentBar",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Size = UDim2.new(0, 3, 1, -22),
+		Position = UDim2.new(0, 0, 0.5, 0),
+		BackgroundColor3 = theme.accent,
+		BorderSizePixel = 0,
+		ZIndex = 6,
+	}, card)
+
+	addCorner(accentBar, 2)
+	bindThemeAccentProperty(accentBar, "BackgroundColor3")
+
+	createBrainrotPreview(card, listing.item, 54, 54, 9, listing.mutation).Position = UDim2.new(0, 11, 0, 17)
+
+	local maxTextWidth = CardHelpers.WIDTH - 72 - 84
+	local valuePixelWidth = 0
+
+	if valueText ~= "" then
+		valuePixelWidth = (CardHelpers.textWidth(valueText, 12, Enum.Font.GothamBlack) or 68) + 2
+	end
+
+	local itemDisplay = listing.itemDisplay ~= "" and listing.itemDisplay or listing.item
+	local maxItemWidth = maxTextWidth - valuePixelWidth - (valuePixelWidth > 0 and 8 or 0)
+	local itemPixelWidth = math.min((CardHelpers.textWidth(itemDisplay, 12, Enum.Font.GothamBold) or maxItemWidth) + 2, maxItemWidth)
+
+	if itemPixelWidth < 24 then
+		itemPixelWidth = 24
+	end
+
+	createInstance("TextLabel", {
+		Name = "Item",
+		Size = UDim2.new(0, itemPixelWidth, 0, 16),
+		Position = UDim2.new(0, 72, 0, 10),
+		BackgroundTransparency = 1,
+		Text = itemDisplay,
+		TextColor3 = COLOR_WHITE,
+		TextStrokeColor3 = COLOR_BLACK,
+		TextStrokeTransparency = 0.6,
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 6,
+	}, card)
+
+	if valueText ~= "" then
+		bindThemeAccentProperty(createInstance("TextLabel", {
+			Name = "Value",
+			Size = UDim2.new(0, valuePixelWidth, 0, 16),
+			Position = UDim2.new(0, 72 + itemPixelWidth + 8, 0, 10),
+			BackgroundTransparency = 1,
+			Text = valueText,
+			TextColor3 = theme.accent,
+			TextStrokeColor3 = COLOR_BLACK,
+			TextStrokeTransparency = 0.6,
+			Font = Enum.Font.GothamBlack,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+		}, card), "TextColor3")
+	end
+
+	local metaStrip = CardHelpers.metaStrip(card, listing.mutation, traitsStr, 6)
+	metaStrip.Size = UDim2.new(1, -150, 0, 18)
+	metaStrip.Position = UDim2.new(0, 72, 0, 28)
+
+	local avatarImage = createInstance("ImageLabel", {
+		Name = "Avatar",
+		Size = UDim2.new(0, 18, 0, 18),
+		Position = UDim2.new(0, 72, 0, 49),
+		BackgroundColor3 = COLOR_BLACK,
+		BackgroundTransparency = 0.3,
+		BorderSizePixel = 0,
+		Image = "",
+		ZIndex = 6,
+	}, card)
+
+	addCorner(avatarImage, 9)
+	addStroke(avatarImage, COLOR_WHITE, 1, 0.72)
+	CardHelpers.avatar(listing.userId, avatarImage)
+
+	bindThemeAccentProperty(createInstance("TextLabel", {
+		Name = "Player",
+		Size = UDim2.new(1, -174, 0, 18),
+		Position = UDim2.new(0, 96, 0, 49),
+		BackgroundTransparency = 1,
+		Text = "@" .. (listing.username ~= "" and listing.username or listing.displayName or "?"),
+		TextColor3 = theme.accent,
+		TextStrokeColor3 = COLOR_BLACK,
+		TextStrokeTransparency = 0.8,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 6,
+	}, card), "TextColor3")
+
+	if locationStr ~= "" then
+		addCorner(createInstance("Frame", {
+			Name = "LiveDot",
+			Size = UDim2.new(0, 6, 0, 6),
+			Position = UDim2.new(0, 73, 0, 72),
+			BackgroundColor3 = COLOR_SUCCESS,
+			BorderSizePixel = 0,
+			ZIndex = 6,
+		}, card), 3)
+
+		createInstance("TextLabel", {
+			Name = "Where",
+			Size = UDim2.new(1, -163, 0, 12),
+			Position = UDim2.new(0, 85, 0, 69),
+			BackgroundTransparency = 1,
+			Text = locationStr,
+			TextColor3 = COLOR_TEXT_SECONDARY,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 10,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			ZIndex = 6,
+		}, card)
+	end
+
+	local buttonLabel = isMine and "YOURS" or (kind == "duel" and "DUEL" or "TRADE")
+
+	local actionButton = createInstance("TextButton", {
+		Size = UDim2.new(0, 70, 0, 30),
+		Position = UDim2.new(1, -76, 0.5, -15),
+		BackgroundColor3 = isMine and COLOR_BLACK or theme.accent,
+		BackgroundTransparency = isMine and 0.45 or 0,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = buttonLabel,
+		TextColor3 = isMine and theme.accent or theme.accentText,
+		TextStrokeTransparency = 1,
+		Font = Enum.Font.GothamBlack,
+		TextSize = isMine and 10 or 11,
+		ZIndex = 7,
+	}, card)
+
+	addCorner(actionButton, 8)
+
+	if isMine then
+		addStroke(actionButton, theme.accent, 1, 0.5)
+		bindThemeAccentProperty(actionButton, "TextColor3")
+	else
+		attachButtonFeel(actionButton)
+		bindThemeAccentButton(actionButton)
+
+		actionButton.MouseButton1Click:Connect(function()
+			onActionClick(kind, listing, card, actionButton)
+		end)
+	end
+
+	card.MouseEnter:Connect(function()
+		tweenObject(card, { BackgroundTransparency = 0.04 }, 0.18)
+		tweenObject(cardStroke, { Transparency = 0.5 }, 0.18)
+	end)
+
+	card.MouseLeave:Connect(function()
+		tweenObject(card, { BackgroundTransparency = 0.16 }, 0.18)
+		tweenObject(cardStroke, { Transparency = 0.82 }, 0.18)
+	end)
+
+	card:SetAttribute("Value", listing.valueNumber or 0)
+
+	local searchTokens = {
+		listing.username or "",
+		listing.displayName or "",
+		listing.itemDisplay or "",
+		listing.mutation or "",
+		traitsStr,
+		listing.region or "",
+	}
+
+	card:SetAttribute("Search", string.lower(table.concat(searchTokens, " ")))
+
+	return card
+end
+
+--=====================================================================
+-- Networking state
+--=====================================================================
+
+local SocketClient = {}
+local clientId = nil
+local ownActiveListings = {}
+local currentPingMs = nil
+local listingsByKind = { duel = {}, trade = {} }
+local postSections = {}
+
+local function filterListingCards(scrollFrame, emptyLabel, defaultEmptyMessage)
+	local query = string.lower(searchBox.Text or "")
+	local anyVisible = false
+
+	for _, child in ipairs(scrollFrame:GetChildren()) do
+		if child:IsA("Frame") and child.Name:match("^Card_") then
+			local searchText = child:GetAttribute("Search") or ""
+			local visible = query == "" or searchText:find(query, 1, true) ~= nil
+
+			child.Visible = visible
+			anyVisible = anyVisible or visible
+		end
+	end
+
+	emptyLabel.Visible = not anyVisible
+	emptyLabel.Text = query ~= "" and "NO MATCHES\nnothing matches that search" or defaultEmptyMessage
+end
+
+local EMPTY_MESSAGES = {
+	duel = "NO DUEL LISTINGS\nwaiting for players...",
+	trade = "NO TRADE LISTINGS\nwaiting for players...",
+}
+
+local function applySearchFilter()
+	filterListingCards(duelsScrollingFrame, duelsEmptyLabel, EMPTY_MESSAGES.duel)
+	filterListingCards(tradesScrollingFrame, tradesEmptyLabel, EMPTY_MESSAGES.trade)
+end
+
+local copyToClipboard
+do
+	local clipboardFn = setclipboard or toclipboard or set_clipboard
+	local writeClipboard
+
+	if clipboardFn then
+		writeClipboard = clipboardFn
+	else
+		writeClipboard = syn and syn.write_clipboard
+	end
+
+	copyToClipboard = function(text)
+		if type(writeClipboard) ~= "function" or type(text) ~= "string" or text == "" then
+			return false
+		end
+
+		return (pcall(writeClipboard, text))
+	end
+end
+
+local renderListings
+do
+	local function onInviteButtonClicked(kind, listing, card, button)
+		local originalText = button.Text
+		button.Text = "..."
+
+		GameBridge.SendInvite(kind, listing.userId, function(ok, reason)
+			if not button.Parent then
+				return
+			end
+
+			if ok then
+				local copied = copyToClipboard(listing.username)
+				reason = reason or "INVITE SENT"
+
+				showToast(reason .. "  Â·  " .. listing.username .. (copied and "  Â·  NAME COPIED" or ""), getActiveTheme().accent)
+
+				button.Text = "SENT"
+				playShimmer(button)
+
+				task.delay(2.5, function()
+					if button.Parent then
+						button.Text = originalText
+					end
+				end)
+			else
+				showToast(string.upper(reason or "FAILED"), COLOR_WARNING)
+				button.Text = originalText
+			end
+		end)
+	end
+
+	local listingCards = { duel = {}, trade = {} }
+
+	renderListings = function(kind)
+		local parent = kind == "duel" and duelsScrollingFrame or tradesScrollingFrame
+		local emptyLabel = kind == "duel" and duelsEmptyLabel or tradesEmptyLabel
+		local cards = listingCards[kind]
+		local listings = listingsByKind[kind]
+
+		table.sort(listings, function(a, b)
+			return (a.postedAt or 0) > (b.postedAt or 0)
+		end)
+
+		local liveIds = {}
+		local count = 0
+
+		local function isMine(listing)
+			if listing.userId and localPlayer.UserId and listing.userId == localPlayer.UserId then
+				return true
+			end
+
+			return clientId ~= nil and listing.clientId == clientId
+		end
+
+		local function upsert(listing, mine)
+			count += 1
+			liveIds[listing.listingId] = true
+
+			local card = cards[listing.listingId]
+
+			if not card or not card.Parent or card:GetAttribute("Mine") ~= mine then
+				if card and card.Parent then
+					card:Destroy()
+				end
+
+				card = createListingCard(parent, listing, kind, onInviteButtonClicked, mine)
+				card:SetAttribute("Mine", mine)
+				cards[listing.listingId] = card
+			end
+
+			card.LayoutOrder = mine and -1000 + count or count
+		end
+
+		for _, listing in ipairs(listings) do
+			if isMine(listing) then
+				upsert(listing, true)
+			end
+		end
+
+		for _, listing in ipairs(listings) do
+			if not isMine(listing) then
+				upsert(listing, false)
+			end
+		end
+
+		for listingId, card in pairs(cards) do
+			if not liveIds[listingId] then
+				if card.Parent then
+					card:Destroy()
+				end
+
+				cards[listingId] = nil
+			end
+		end
+
+		local badge = tabButtons[kind == "duel" and "DUELS" or "TRADES"].badge
+		badge.Visible = count > 0
+		badge.Text = tostring(math.min(count, 99))
+
+		filterListingCards(parent, emptyLabel, EMPTY_MESSAGES[kind])
+	end
+
+	searchBox:GetPropertyChangedSignal("Text"):Connect(applySearchFilter)
+end
+
+--=====================================================================
+-- Brainrot picker modal
+--=====================================================================
+
+local brainrotPicker = { active = false, onPick = nil, kind = nil }
+local pickerModal, pickerPanel, pickerArt, pickerGradient, pickerVeil
+local pickerSubtitle, pickerCloseButton, pickerRefreshButton
+local pickerGrid, pickerEmptyLabel
+local pickerTargetWidth = 152
+local openBrainrotPicker, closeBrainrotPicker
+
+do
+	pickerModal = createInstance("Frame", {
+		Name = "PickerModal",
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromScale(0, 0),
+		BackgroundColor3 = COLOR_BLACK,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 100,
+	}, screenGui)
+
+	local backdrop = createInstance("TextButton", {
+		Name = "Backdrop",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = COLOR_BLACK,
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		ZIndex = 100,
+	}, pickerModal)
+
+	pickerPanel = createInstance("Frame", {
+		Name = "PickerPanel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.new(0, 500, 0, 432),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		BackgroundColor3 = COLOR_WHITE,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		ZIndex = 101,
+	}, pickerModal)
+
+	addCorner(pickerPanel, 16)
+	createInstance("UIScale", { Scale = uiScaleFactor }, pickerPanel)
+
+	pickerGradient = createInstance("UIGradient", { Rotation = 90 }, pickerPanel)
+
+	addStroke(pickerPanel, COLOR_BLACK, 3, 0)
+
+	pickerArt = createInstance("ImageLabel", {
+		Name = "Art",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Image = "",
+		ImageTransparency = 0.15,
+		ScaleType = Enum.ScaleType.Crop,
+		Visible = false,
+		ZIndex = 101,
+	}, pickerPanel)
+
+	addCorner(pickerArt, 16)
+
+	do
+		pickerVeil = createInstance("Frame", {
+			Name = "Veil",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = COLOR_BLACK,
+			BackgroundTransparency = 0.5,
+			BorderSizePixel = 0,
+			ZIndex = 102,
+		}, pickerPanel)
+
+		addCorner(pickerVeil, 16)
+
+		createInstance("UIGradient", {
+			Rotation = 8,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.4),
+				NumberSequenceKeypoint.new(0.45, 0.2),
+				NumberSequenceKeypoint.new(1, 0.1),
+			}),
+		}, pickerVeil)
+	end
+
+	createInstance("TextLabel", {
+		Name = "Title",
+		Size = UDim2.new(1, -150, 0, 22),
+		Position = UDim2.new(0, 16, 0, 12),
+		BackgroundTransparency = 1,
+		Text = "SELECT A BRAINROT",
+		TextColor3 = COLOR_WHITE,
+		TextStrokeColor3 = COLOR_BLACK,
+		TextStrokeTransparency = 0.55,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 17,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 104,
+	}, pickerPanel)
+
+	pickerSubtitle = createInstance("TextLabel", {
+		Name = "Sub",
+		Size = UDim2.new(1, -150, 0, 13),
+		Position = UDim2.new(0, 16, 0, 34),
+		BackgroundTransparency = 1,
+		Text = "posting to duels",
+		TextColor3 = COLOR_WHITE,
+		TextStrokeColor3 = COLOR_BLACK,
+		TextStrokeTransparency = 0.5,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 104,
+	}, pickerPanel)
+
+	pickerCloseButton = createInstance("TextButton", {
+		Name = "Close",
+		Size = UDim2.new(0, 30, 0, 26),
+		Position = UDim2.new(1, -46, 0, 14),
+		BackgroundColor3 = COLOR_BLACK,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "X",
+		TextColor3 = COLOR_WHITE,
+		TextStrokeTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		ZIndex = 105,
+	}, pickerPanel)
+
+	addCorner(pickerCloseButton, 8)
+
+	pickerCloseButton.MouseEnter:Connect(function()
+		tweenObject(pickerCloseButton, { BackgroundColor3 = COLOR_DANGER }, 0.15)
+	end)
+
+	pickerCloseButton.MouseLeave:Connect(function()
+		tweenObject(pickerCloseButton, { BackgroundColor3 = COLOR_BLACK }, 0.15)
+	end)
+
+	pickerRefreshButton = createInstance("TextButton", {
+		Name = "Refresh",
+		Size = UDim2.new(0, 62, 0, 26),
+		Position = UDim2.new(1, -112, 0, 14),
+		BackgroundColor3 = COLOR_BLACK,
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "REFRESH",
+		TextColor3 = COLOR_WHITE,
+		TextStrokeTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextSize = 9,
+		ZIndex = 105,
+	}, pickerPanel)
+
+	addCorner(pickerRefreshButton, 8)
+
+	pickerRefreshButton.MouseEnter:Connect(function()
+		tweenObject(pickerRefreshButton, { BackgroundTransparency = 0.33 }, 0.15)
+	end)
+
+	pickerRefreshButton.MouseLeave:Connect(function()
+		tweenObject(pickerRefreshButton, { BackgroundTransparency = 0.45 }, 0.15)
+	end)
+
+	createInstance("Frame", {
+		Size = UDim2.new(1, -32, 0, 1),
+		Position = UDim2.new(0, 16, 0, 50),
+		BackgroundColor3 = COLOR_WHITE,
+		BackgroundTransparency = 0.6,
+		BorderSizePixel = 0,
+		ZIndex = 104,
+	}, pickerPanel)
+
+	pickerGrid = createInstance("ScrollingFrame", {
+		Name = "Grid",
+		Size = UDim2.new(1, -24, 1, -70),
+		Position = UDim2.new(0, 12, 0, 58),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = Color3.fromRGB(120, 120, 130),
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ZIndex = 104,
+	}, pickerPanel)
+
+	do
+		local gridLayout = createInstance("UIGridLayout", {
+			CellSize = UDim2.new(0.33333333333333331, -7, 0, 186),
+			CellPadding = UDim2.new(0, 10, 0, 10),
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}, pickerGrid)
+
+		gridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+			pickerGrid.CanvasSize = UDim2.new(0, 0, 0, gridLayout.AbsoluteContentSize.Y + 12)
+		end)
+	end
+
+	pickerEmptyLabel = createInstance("TextLabel", {
+		Name = "Empty",
+		Size = UDim2.new(1, 0, 0, 60),
+		BackgroundTransparency = 1,
+		Text = "",
+		TextColor3 = COLOR_TEXT_MUTED,
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextWrapped = true,
+		Visible = false,
+		ZIndex = 105,
+	}, pickerPanel)
+
+	pickerEmptyLabel.Position = UDim2.new(0, 0, 0.5, -30)
+
+	local function resizePicker()
+		local screenSize = screenGui.AbsoluteSize
+
+		if screenSize.X >= 1 then
+			local height = (screenSize.Y - 24) / uiScaleFactor
+			pickerPanel.Size = UDim2.new(0, math.min(500, (screenSize.X - 24) / uiScaleFactor), 0, math.min(432, height))
+		end
+	end
+
+	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(resizePicker)
+
+	local function applyPickerTheme()
+		local theme = getActiveTheme()
+
+		pickerGradient.Color = ColorSequence.new(theme.top, theme.bottom)
+
+		if theme.image ~= "" then
+			pickerArt.Image = theme.image
+			pickerArt.ImageTransparency = theme.imageTransparency
+			pickerArt.Visible = true
+		else
+			pickerArt.Image = ""
+			pickerArt.Visible = false
+		end
+
+		pickerVeil.BackgroundColor3 = theme.accent
+		pickerSubtitle.TextColor3 = theme.accent
+	end
+
+	closeBrainrotPicker = function()
+		if not brainrotPicker.active then
+			return
+		end
+
+		brainrotPicker.active = false
+
+		tweenObject(pickerPanel, { Size = UDim2.new(0, pickerPanel.Size.X.Offset, 0, 0) }, 0.16, Enum.EasingStyle.Quint)
+		tweenObject(backdrop, { BackgroundTransparency = 1 }, 0.16)
+
+		task.delay(0.18, function()
+			pickerModal.Visible = false
+			resizePicker()
+			backdrop.BackgroundTransparency = 0.45
+		end)
+	end
+
+	local function populatePicker()
+		for _, child in ipairs(pickerGrid:GetChildren()) do
+			if child:IsA("Frame") then
+				child:Destroy()
+			end
+		end
+
+		local inventory, errorMessage = GameBridge.ScanInventory()
+
+		if not inventory or #inventory == 0 then
+			pickerEmptyLabel.Visible = true
+			pickerEmptyLabel.Text = errorMessage and string.upper(errorMessage) or "NO BRAINROTS FOUND ON YOUR PLOT"
+			return
+		end
+
+		pickerEmptyLabel.Visible = false
+
+		local theme = getActiveTheme()
+
+		for index, item in ipairs(inventory) do
+			local cell = createInstance("Frame", {
+				Name = "Cell",
+				LayoutOrder = index,
+				BackgroundColor3 = COLOR_SURFACE,
+				BackgroundTransparency = 0.16,
+				BorderSizePixel = 0,
+				ClipsDescendants = true,
+				ZIndex = 105,
+			}, pickerGrid)
+
+			addCorner(cell, 11)
+
+			local cellStroke = addStroke(cell, COLOR_WHITE, 1, 0.82)
+
+			local preview = createBrainrotPreview(cell, item.name, pickerTargetWidth - 18, 84, 9, item.mutation)
+			preview.Size = UDim2.new(1, -18, 0, 84)
+			preview.Position = UDim2.new(0, 9, 0, 8)
+			preview.ZIndex = 106
+
+			createInstance("TextLabel", {
+				Name = "Name",
+				Size = UDim2.new(1, -18, 0, 14),
+				Position = UDim2.new(0, 9, 0, 99),
+				BackgroundTransparency = 1,
+				Text = item.name,
+				TextColor3 = GameBridge.MutationColor(item.mutation) or COLOR_WHITE,
+				Font = Enum.Font.GothamBold,
+				TextSize = 11,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				ZIndex = 106,
+			}, cell)
+
+			createInstance("TextLabel", {
+				Name = "Rate",
+				Size = UDim2.new(1, -18, 0, 13),
+				Position = UDim2.new(0, 9, 0, 115),
+				BackgroundTransparency = 1,
+				Text = item.genText,
+				TextColor3 = theme.accent,
+				Font = Enum.Font.GothamBlack,
+				TextSize = 11,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				ZIndex = 106,
+			}, cell)
+
+			local strip = CardHelpers.metaStrip(cell, item.mutation, item.traits, 106)
+			strip.Size = UDim2.new(1, -18, 0, 18)
+			strip.Position = UDim2.new(0, 9, 0, 132)
+
+			local postCellButton = createInstance("TextButton", {
+				Size = UDim2.new(1, -18, 0, 28),
+				Position = UDim2.new(0, 9, 1, -34),
+				BackgroundColor3 = theme.accent,
+				BorderSizePixel = 0,
+				AutoButtonColor = false,
+				Text = "POST",
+				TextColor3 = theme.accentText,
+				TextStrokeTransparency = 1,
+				Font = Enum.Font.GothamBlack,
+				TextSize = 12,
+				ZIndex = 107,
+			}, cell)
+
+			addCorner(postCellButton, 8)
+			attachButtonFeel(postCellButton)
+
+			local buttonStroke = createInstance("UIStroke", {
+				Color = COLOR_WHITE,
+				Thickness = 2,
+				Transparency = 1,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			}, postCellButton)
+
+			local function onCellEnter()
+				tweenObject(cell, { BackgroundTransparency = 0.04 }, 0.15)
+				tweenObject(buttonStroke, { Transparency = 0.1 }, 0.15)
+			end
+
+			local function onCellLeave()
+				tweenObject(cell, { BackgroundTransparency = 0.16 }, 0.15)
+				tweenObject(buttonStroke, { Transparency = 1 }, 0.15)
+			end
+
+			cell.MouseEnter:Connect(onCellEnter)
+			cell.MouseLeave:Connect(onCellLeave)
+			postCellButton.MouseEnter:Connect(onCellEnter)
+
+			local chosenItem = item
+
+			postCellButton.MouseButton1Click:Connect(function()
+				local callback = brainrotPicker.onPick
+				closeBrainrotPicker()
+
+				if callback then
+					callback(chosenItem)
+				end
+			end)
+		end
+	end
+
+	openBrainrotPicker = function(kind, onPick)
+		brainrotPicker.kind = kind
+		brainrotPicker.onPick = onPick
+		brainrotPicker.active = true
+
+		applyPickerTheme()
+		pickerSubtitle.Text = "posting to " .. (kind == "duel" and "duels" or "trades")
+		populatePicker()
+
+		pickerModal.Visible = true
+		resizePicker()
+
+		local width = pickerPanel.Size.X.Offset
+		pickerPanel.Size = UDim2.new(0, width, 0, 0)
+		backdrop.BackgroundTransparency = 1
+		resizePicker()
+
+		local height = pickerPanel.Size.Y.Offset
+		pickerPanel.Size = UDim2.new(0, width, 0, 0)
+
+		tweenObject(pickerPanel, { Size = UDim2.new(0, width, 0, height) }, 0.22, Enum.EasingStyle.Quint)
+		tweenObject(backdrop, { BackgroundTransparency = 0.45 }, 0.22)
+	end
+
+	pickerCloseButton.MouseButton1Click:Connect(closeBrainrotPicker)
+	backdrop.MouseButton1Click:Connect(closeBrainrotPicker)
+
+	pickerRefreshButton.MouseButton1Click:Connect(function()
+		playShimmer(pickerRefreshButton)
+		populatePicker()
+	end)
+end
+
+--=====================================================================
+-- Post sections
+--=====================================================================
+
+do
+	local lastPostTime = { duel = 0, trade = 0 }
+
+	local function createPostSection(parent, kind)
+		local section = createInstance("Frame", {
+			Name = "PostSection",
+			LayoutOrder = -1000,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			ZIndex = 5,
+		}, parent)
+
+		createInstance("UIListLayout", {
+			Padding = UDim.new(0, 5),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}, section)
+
+		local prefix = "POST TO "
+		local tabLabel = kind == "duel" and "DUELS" or "TRADES"
+
+		local postButton = createInstance("TextButton", {
+			Name = "PostBtn",
+			LayoutOrder = 1,
+			Size = UDim2.new(1, 0, 0, 30),
+			BackgroundColor3 = COLOR_BLACK,
+			BackgroundTransparency = 0.45,
+			BorderSizePixel = 0,
+			AutoButtonColor = false,
+			Text = "+  " .. prefix .. tabLabel,
+			TextColor3 = COLOR_WHITE,
+			TextStrokeTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 11,
+			ZIndex = 6,
+		}, section)
+
+		addCorner(postButton, 9)
+		attachButtonFeel(postButton)
+
+		postButton.MouseEnter:Connect(function()
+			tweenObject(postButton, { BackgroundTransparency = 0.33 }, 0.15)
+		end)
+
+		postButton.MouseLeave:Connect(function()
+			tweenObject(postButton, { BackgroundTransparency = 0.45 }, 0.15)
+		end)
+
+		local api = {}
+
+		local function onPick(item)
+			if not GameBridge.IsRealBrainrot(item.name) then
+				showToast("NOT A REAL BRAINROT", COLOR_DANGER)
+				return
+			end
+
+			local remaining = CONFIG.postCooldown - os.clock() - (lastPostTime[kind] or 0)
+
+			if 0 < remaining then
+				showToast(string.format("%s COOLDOWN %ds", kind == "duel" and "DUEL" or "TRADE", math.ceil(remaining)), COLOR_WARNING)
+				return
+			end
+
+			lastPostTime[kind] = os.clock()
+
+			SocketClient.send({
+				type = "post",
+				kind = kind,
+				listing = {
+					item = item.name,
+					itemDisplay = item.name,
+					valueText = item.genText,
+					valueNumber = item.genValue,
+					mutation = item.mutation,
+					traits = item.rarity,
+					rarity = item.rarity,
+					traitList = item.traits,
+					region = GameBridge.Region(),
+					pingMs = currentPingMs,
+				},
+			})
+		end
+
+		postButton.MouseButton1Click:Connect(function()
+			openBrainrotPicker(kind, onPick)
+		end)
+
+		api.closePicker = closeBrainrotPicker
+		api.refreshActive = function() end
+
+		return api
+	end
+
+	postSections.duel = createPostSection(duelsScrollingFrame, "duel")
+	postSections.trade = createPostSection(tradesScrollingFrame, "trade")
+end
+
+--=====================================================================
+-- Tab switching, theming, minimize, dragging
+--=====================================================================
+
+local onlinePlayerCount = 0
+local isIdentified = false
+
+local function updateStatusCount()
+	if not isIdentified then
+		return
+	end
+
+	statusTextLabel.Text = "Online Players"
+	statusTextLabel.TextColor3 = COLOR_TEXT_PRIMARY
+	statusCountLabel.Text = tostring(onlinePlayerCount)
+	statusCountLabel.Visible = true
+end
+
+local function setActiveTab(tabName)
+	activeTab = tabName
+	selectedTab = tabName
+
+	local theme = getActiveTheme()
+
+	for name, entry in pairs(tabButtons) do
+		local isActive = name == tabName
+
+		tweenObject(entry.btn, {
+			BackgroundColor3 = isActive and theme.accent or COLOR_BLACK,
+			BackgroundTransparency = isActive and 0 or 0.45,
+			TextColor3 = isActive and theme.accentText or COLOR_TEXT_SECONDARY,
+		}, 0.18)
+	end
+
+	for name, page in pairs(tabPages) do
+		page.Visible = name == tabName
+	end
+
+	applySearchFilter()
+end
+
+for tabName, entry in pairs(tabButtons) do
+	entry.btn.MouseButton1Click:Connect(function()
+		playShimmer(entry.btn)
+		setActiveTab(tabName)
+	end)
+
+	entry.btn.MouseEnter:Connect(function()
+		if activeTab ~= tabName then
+			tweenObject(entry.btn, { BackgroundTransparency = 0.33, TextColor3 = COLOR_WHITE }, 0.15)
+		end
+	end)
+
+	entry.btn.MouseLeave:Connect(function()
+		if activeTab ~= tabName then
+			tweenObject(entry.btn, { BackgroundTransparency = 0.45, TextColor3 = COLOR_TEXT_SECONDARY }, 0.15)
+		end
+	end)
+end
+
+local function applyTheme()
+	local theme = getActiveTheme()
+
+	windowGradient.Color = ColorSequence.new(theme.top, theme.bottom)
+
+	if theme.image ~= "" then
+		windowArt.Image = theme.image
+		windowArt.ImageTransparency = theme.imageTransparency
+		windowArt.Visible = true
+	else
+		windowArt.Image = ""
+		windowArt.Visible = false
+	end
+
+	headerDivider.BackgroundColor3 = theme.accent
+	headerDivider.BackgroundTransparency = 0.6
+	titleLabel.TextColor3 = theme.accent
+
+	statusDotFrame.BackgroundColor3 = isIdentified and COLOR_SUCCESS or Color3.fromRGB(90, 90, 96)
+	themeButton.Text = "Color Theme: " .. theme.name
+
+	for _, entry in ipairs(themedAccentProperties) do
+		if entry.object and entry.object.Parent then
+			pcall(function()
+				entry.object[entry.property] = theme.accent
+			end)
+		end
+	end
+
+	for _, button in ipairs(themedAccentButtons) do
+		if button and button.Parent then
+			button.BackgroundColor3 = theme.accent
+			button.TextColor3 = theme.accentText
+		end
+	end
+
+	setActiveTab(activeTab)
+end
+
+themeButton.MouseButton1Click:Connect(function()
+	currentThemeIndex += 1
+
+	if currentThemeIndex > #THEMES then
+		currentThemeIndex = 1
+	end
+
+	applyTheme()
+	saveConfig()
+end)
+
+local function updateMinimizedVisibility()
+	bodyFrame.Visible = not isMinimized
+	footerFrame.Visible = not isMinimized
+	headerDivider.Visible = not isMinimized
+
+	hideButton.Text = isMinimized and "Show" or "Hide"
+
+	tweenObject(mainWindow, { Size = UDim2.new(0, 356, 0, isMinimized and 62 or 452) }, 0.26, Enum.EasingStyle.Quint)
+
+	task.delay(0.3, function()
+		clampWindowToScreen(true)
+	end)
+end
+
+hideButton.MouseButton1Click:Connect(function()
+	isMinimized = not isMinimized
+	updateMinimizedVisibility()
+	saveConfig()
+end)
+
+do
+	local isDragging = false
+	local dragStartInput = nil
+	local dragStartPos = nil
+	local lastInput = nil
+
+	local function isOverHideButton(position)
+		if hideButton.Visible then
+			local absolutePosition = hideButton.AbsolutePosition
+			local absoluteSize = hideButton.AbsoluteSize
+
+			return position.X >= absolutePosition.X
+				and position.X <= absolutePosition.X + absoluteSize.X
+				and position.Y >= absolutePosition.Y
+				and position.Y <= absolutePosition.Y + absoluteSize.Y
+		end
+
+		return false
+	end
+
+	headerFrame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isOverHideButton(input.Position) then
+				return
+			end
+
+			local position = input.Position
+			local windowPos = mainWindow.Position
+
+			isDragging = true
+			dragStartInput = position
+			dragStartPos = windowPos
+		end
+	end)
+
+	headerFrame.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			lastInput = input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		local shouldDrag = isDragging
+
+		if isDragging then
+			shouldDrag = input == lastInput
+				or input.UserInputType == Enum.UserInputType.MouseMovement
+				or input.UserInputType == Enum.UserInputType.Touch
+		end
+
+		if shouldDrag and mainWindow.Parent then
+			local delta = input.Position - dragStartInput
+			mainWindow.Position = UDim2.new(
+				dragStartPos.X.Scale,
+				dragStartPos.X.Offset + delta.X,
+				dragStartPos.Y.Scale,
+				dragStartPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isDragging then
+				isDragging = false
+				clampWindowToScreen(false)
+				recordWindowPosition()
+			end
+		end
+	end)
+end
+
+--=====================================================================
+-- WebSocket client
+--=====================================================================
+
+do
+	local websocket = nil
+	local isConnected = false
+	local lastPingTime = 0
+	local backoff = CONFIG.backoffMin
+	local isConnecting = false
+	local connections = {}
+
+	local function setStatus(text, textColor, backgroundColor)
+		statusTextLabel.Text = text
+		statusTextLabel.TextColor3 = textColor
+		statusDotFrame.BackgroundColor3 = backgroundColor or textColor
+		statusCountLabel.Visible = false
+	end
+
+	local function sendMessage(payload)
+		if not websocket then
+			return false
+		end
+
+		local ok = pcall(function()
+			websocket:Send(HttpService:JSONEncode(payload))
+		end)
+
+		if not ok then
+			isConnected = false
+		end
+
+		return ok
+	end
+
+	SocketClient.send = function(payload)
+		if not websocket or not isConnected then
+			showToast("NOT CONNECTED", COLOR_DANGER)
+			return false
+		end
+
+		return sendMessage(payload)
+	end
+
+	local function handleMessage(message)
+		local messageType = message.type
+
+		if messageType == "connect_ok" then
+			clientId = message.clientId
+		elseif messageType == "identify_ok" then
+			clientId = message.clientId or clientId
+			isConnected = true
+			isIdentified = true
+			backoff = CONFIG.backoffMin
+			setStatus("ONLINE", COLOR_TEXT_PRIMARY, COLOR_SUCCESS)
+			updateStatusCount()
+			lastPingTime = os.clock()
+			sendMessage({ type = "ping", ts = lastPingTime })
+		elseif messageType == "pong" then
+			local elapsed = (os.clock() - lastPingTime) * 1000
+
+			if elapsed > 0 and elapsed < 10000 then
+				currentPingMs = math.floor(elapsed + 0.5)
+			end
+		elseif messageType == "presence" then
+			onlinePlayerCount = tonumber(message.count) or 0
+			updateStatusCount()
+		elseif messageType == "listings" then
+			if type(message.data) ~= "table" then
+				return
+			end
+
+			listingsByKind.duel = {}
+			listingsByKind.trade = {}
+
+			local data = message.data or {}
+
+			for _, listing in ipairs(data) do
+				if GameBridge.IsRealBrainrot(listing.item) then
+					if listing.kind == "trade" then
+						table.insert(listingsByKind.trade, listing)
+					else
+						table.insert(listingsByKind.duel, listing)
+					end
+
+					if (listing.userId and listing.userId == localPlayer.UserId) or listing.clientId == clientId then
+						ownActiveListings[listing.listingId] = listing
+					end
+				end
+			end
+
+			for listingId in pairs(ownActiveListings) do
+				local stillPresent = false
+
+				for _, listing in ipairs(data) do
+					if listing.listingId == listingId then
+						stillPresent = true
+						break
+					end
+				end
+
+				if not stillPresent then
+					ownActiveListings[listingId] = nil
+				end
+			end
+
+			renderListings("duel")
+			renderListings("trade")
+
+			for _, section in pairs(postSections) do
+				section.refreshActive()
+			end
+		elseif messageType == "post_ok" then
+			showToast("LISTING POSTED", getActiveTheme().accent)
+		elseif messageType == "post_rejected" then
+			if message.reason == "cooldown" then
+				showToast(
+					string.format(
+						"%sCOOLDOWN %ds",
+						message.kind and string.upper(message.kind) .. " " or "",
+						math.ceil((message.retryInMs or 0) / 1000)
+					),
+					COLOR_WARNING
+				)
+			else
+				showToast("REJECTED: " .. string.upper(tostring(message.reason)), COLOR_DANGER)
+			end
+		elseif messageType == "error" then
+			showToast(string.upper(tostring(message.message)), COLOR_DANGER)
+		end
+	end
+
+	local scheduleReconnect
+
+	local function attemptConnect()
+		if isConnecting or isConnected then
+			return
+		end
+
+		if not isCurrentRun() or not screenGui.Parent then
+			return
+		end
+
+		if not connect then
+			setStatus("NO WEBSOCKET", COLOR_DANGER)
+			return
+		end
+
+		if CONFIG.wsUrl:find("CHANGE%-ME") then
+			setStatus("UNCONFIGURED", COLOR_DANGER)
+			return
+		end
+
+		isConnecting = true
+		setStatus("CONNECTING", COLOR_WARNING)
+
+		local ok, socket = pcall(connect, CONFIG.wsUrl)
+		isConnecting = false
+
+		if not ok or not socket then
+			setStatus("FAILED", COLOR_DANGER)
+			scheduleReconnect()
+			return
+		end
+
+		websocket = socket
+		connections = {}
+
+		connections[#connections + 1] = websocket.OnMessage:Connect(function(rawMessage)
+			local decodedOk, decoded = pcall(function()
+				return HttpService:JSONDecode(rawMessage)
+			end)
+
+			local isTable
+
+			if decodedOk then
+				isTable = type(decoded) == "table"
+			else
+				isTable = decodedOk
+			end
+
+			if isTable then
+				local handledOk, handlerError = pcall(handleMessage, decoded)
+
+				if not handledOk then
+					warn("[AceFinder] handler error: " .. tostring(handlerError))
+				end
+			end
+		end)
+
+		connections[#connections + 1] = websocket.OnClose:Connect(function()
+			isConnected = false
+			isIdentified = false
+			websocket = nil
+			connections = {}
+			setStatus("OFFLINE", COLOR_TEXT_SECONDARY, Color3.fromRGB(90, 90, 96))
+			scheduleReconnect()
+		end)
+
+		sendMessage({
+			type = "identify",
+			token = CONFIG.wsToken,
+			name = localPlayer.Name,
+			displayName = localPlayer.DisplayName,
+			userId = localPlayer.UserId,
+		})
+	end
+
+	scheduleReconnect = function()
+		if not isCurrentRun() or not screenGui.Parent then
+			return
+		end
+
+		backoff = math.min(CONFIG.backoffMax, backoff * 2)
+		local delaySeconds = math.max(CONFIG.backoffMin, backoff + backoff * 0.2 * (math.random() * 2 - 1))
+
+		setStatus(string.format("RETRY %ds", math.ceil(delaySeconds)), COLOR_WARNING)
+		task.delay(delaySeconds, attemptConnect)
+	end
+
+	task.spawn(function()
+		while screenGui.Parent and isCurrentRun() do
+			task.wait(CONFIG.pingEvery)
+
+			if isConnected and websocket then
+				lastPingTime = os.clock()
+				sendMessage({ type = "ping", ts = lastPingTime })
+			end
+		end
+	end)
+
+	screenGui.Destroying:Connect(function()
+		isConnected = false
+		closeBrainrotPicker()
+
+		if websocket then
+			pcall(function()
+				websocket:Close()
+			end)
+		end
+	end)
+
+	applyTheme()
+	updateMinimizedVisibility()
+	task.spawn(attemptConnect)
+end
+
+--=====================================================================
+-- Boot
+--=====================================================================
+
+if not tradeController and not duelsController then
+	showToast("GAME CONTROLLERS NOT FOUND", COLOR_DANGER)
+end
+
+print("discord.gg/u6sM2beDNx")
