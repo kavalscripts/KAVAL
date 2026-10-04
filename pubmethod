@@ -650,11 +650,11 @@ end  -- LEAKED BY SLICED | discord.gg/pubmethod
 local localPlayer = Players.LocalPlayer
 
 for _, slicedv2 in ipairs({
-	{ "GoonPrivV6_Steal_Config.json", "rymogspriv_config.json" },
-	{ "GoonPrivV6_Utility_Config.json", "rymogspriv_utility.json" },
-	{ "SideTP.json", "rymogspriv_sidetp.json" },
-	{ "ZyncHub_UtilPanel.json", "rymogspriv_utilpanel.json" },
-	{ "ZyncHub_Optimizer.json", "rymogspriv_optimizer.json" },
+	{ "GoonPrivV6_Steal_Config.json", "kavalhubpub1.json" },
+	{ "GoonPrivV6_Utility_Config.json", "kavalhubpub2.json" },
+	{ "SideTP.json", "kavalhubpub3.json" },
+	{ "ZyncHub_UtilPanel.json", "kavalhubpub4.json" },
+	{ "ZyncHub_Optimizer.json", "kavalhubpub5.json" },
 }) do  -- LEAKED BY SLICED | discord.gg/pubmethod
 	pcall(function()
 		if isfile and readfile and writefile and isfile(slicedv2[1]) and not isfile(slicedv2[2]) then writefile(slicedv2[2], readfile(slicedv2[1])) end
@@ -674,9 +674,9 @@ tbl = {
 	PriorityItems = {},
 }
 
-if isfile and readfile and isfile("rymogspriv_config.json") then
+if isfile and readfile and isfile("kavalhubpub1.json") then
 	local ok, result = pcall(function()
-		return HttpService:JSONDecode(readfile("rymogspriv_config.json"))  -- LEAKED BY SLICED | discord.gg/pubmethod
+		return HttpService:JSONDecode(readfile("kavalhubpub1.json"))  -- LEAKED BY SLICED | discord.gg/pubmethod
 	end)
 	if ok and type(result) == "table" then
 		tbl = result
@@ -725,11 +725,11 @@ do
 	_G.SharedKeybindsState = sharedKeybindsState
 
 	fn = function()
-		local json = isfile and readfile and isfile("rymogspriv_utility.json")
+		local json = isfile and readfile and isfile("kavalhubpub2.json")
 		local keybinds = nil
 		if json then
 			local ok, result = pcall(function()
-				return game:GetService("HttpService"):JSONDecode(readfile("rymogspriv_utility.json"))
+				return game:GetService("HttpService"):JSONDecode(readfile("kavalhubpub2.json"))
 			end)
 			local flag = ok and type(result) == "table" and type(result.Keybinds) == "table"
 			keybinds = nil  -- LEAKED BY SLICED | discord.gg/pubmethod
@@ -757,7 +757,7 @@ local slicedfn2
 slicedfn2 = function()  -- LEAKED BY SLICED | discord.gg/pubmethod
 	if writefile then
 		pcall(function()
-			writefile("rymogspriv_config.json", HttpService:JSONEncode(tbl))
+			writefile("kavalhubpub1.json", HttpService:JSONEncode(tbl))
 		end)
 	end
 end
@@ -1203,7 +1203,7 @@ do
 		Size = UDim2.new(1, 0, 0, 22),
 		Position = UDim2.fromOffset(0, 0),  -- LEAKED BY SLICED | discord.gg/pubmethod
 		BackgroundTransparency = 1,
-		Text = "rymogs hub",
+		Text = "Kaval Hub",
 		Font = Enum.Font.GothamBold,
 		TextSize = 19,
 		TextColor3 = Color3.fromRGB(205, 205, 225),
@@ -1214,7 +1214,7 @@ do
 		Size = UDim2.new(1, 0, 0, 22),  -- LEAKED BY SLICED | discord.gg/pubmethod
 		Position = UDim2.fromOffset(1, 1),
 		BackgroundTransparency = 1,
-		Text = "rymogs hub",
+		Text = "Kaval Hub",
 		Font = Enum.Font.GothamBold,
 		TextSize = 19,
 		TextColor3 = Color3.fromRGB(0, 0, 0),
@@ -1226,7 +1226,7 @@ do
 		Size = UDim2.new(1, 0, 0, 13),
 		Position = UDim2.fromOffset(0, 21),
 		BackgroundTransparency = 1,
-		Text = "discord.gg/rymogs",
+		Text = "discord.gg/u6sM2beDNx",
 		Font = Enum.Font.GothamMedium,
 		TextSize = 11,
 		TextColor3 = Color3.fromRGB(150, 150, 170),
@@ -1237,7 +1237,7 @@ do
 		Size = UDim2.new(1, 0, 0, 13),
 		Position = UDim2.fromOffset(1, 22),
 		BackgroundTransparency = 1,
-		Text = "discord.gg/rymogs",
+		Text = "discord.gg/u6sM2beDNx",
 		Font = Enum.Font.GothamMedium,
 		TextSize = 11,
 		TextColor3 = Color3.fromRGB(0, 0, 0),
@@ -1821,7 +1821,7 @@ do
 	local sideTP = nil
 	if readfile then  -- LEAKED BY SLICED | discord.gg/pubmethod
 		pcall(function()
-			local json = readfile("rymogspriv_sidetp.json")
+			local json = readfile("kavalhubpub3.json")
 			if type(json) == "string" and #json > 0 then data = HttpService2:JSONDecode(json) end
 		end)
 	end
@@ -1933,7 +1933,7 @@ do
 		pcall(function()  -- LEAKED BY SLICED | discord.gg/pubmethod
 			local slicedtbl4 = type(data) == "table" and data or {}
 			slicedtbl4.autoTp = true
-			writefile("rymogspriv_sidetp.json", HttpService2:JSONEncode(slicedtbl4))
+			writefile("kavalhubpub3.json", HttpService2:JSONEncode(slicedtbl4))
 		end)
 	end
 end
@@ -7809,7 +7809,16 @@ doVelocityTP = function(arg)
 			local humanoid2 = localPlayer2.Character and localPlayer2.Character:FindFirstChildOfClass("Humanoid")
 			if humanoid2 then humanoid2.AutoRotate = true end
 		end)
-		goToBrainrot(position, slicedv6 and slicedv6.slot)
+		if face and face.Magnitude > 0.1 then
+			local humanoidRootPart4 = localPlayer2.Character and localPlayer2.Character:FindFirstChild("HumanoidRootPart")
+			if humanoidRootPart4 then
+				pcall(function()
+					humanoidRootPart4.CFrame = CFrame.new(humanoidRootPart4.Position, humanoidRootPart4.Position + face)
+					_vzL(humanoidRootPart4)
+					_vzA(humanoidRootPart4)
+				end)
+			end
+		end
 		isTeleporting = false  -- LEAKED BY SLICED | discord.gg/pubmethod
 		if _G.TPStop then return end
 		if _G.ArmSteal then pcall(_G.ArmSteal, slicedv6) end
@@ -14042,7 +14051,7 @@ textLabel.TextSize = 13
 textLabel.TextColor3 = slicedtbl5.TEXT
 textLabel.TextXAlignment = Enum.TextXAlignment.Left
 textLabel.TextTruncate = Enum.TextTruncate.AtEnd
-textLabel.Text = "RYMOGS HUB"
+textLabel.Text = "Kaval Hub"
 local textLabel2 = Instance.new("TextLabel", frame2)
 textLabel2.Size = UDim2.new(1, -(slicedn16 * 2), 0, 14)
 textLabel2.Position = UDim2.new(0, 12, 0, 29)
@@ -14052,7 +14061,7 @@ textLabel2.TextSize = 10  -- LEAKED BY SLICED | discord.gg/pubmethod
 textLabel2.TextColor3 = slicedtbl5.MUTED
 textLabel2.TextXAlignment = Enum.TextXAlignment.Left
 textLabel2.TextTruncate = Enum.TextTruncate.AtEnd
-textLabel2.Text = "discord.gg/rymogs"
+textLabel2.Text = "discord.gg/u6sM2beDNx"
 local textBox
 
 do
@@ -16139,7 +16148,7 @@ do
 		createFrame(slicedv13, "Config")
 		local textLabel5 = nil
 		local function slicedfn62(arg) if textLabel5 then textLabel5.Text = "  " .. tostring(arg) end end
-		local slicedstr3 = "rymogspriv_export.json"
+		local slicedstr3 = "kavalhubpub6.json"
 		local frame8 = Instance.new("Frame", slicedv13)
 		frame8.Size = UDim2.new(1, 0, 0, 30)
 		frame8.BackgroundTransparency = 1
@@ -16202,7 +16211,7 @@ do
 			end
 			textBox3.Text = text
 			local slicedflag5 = false
-			if writefile then slicedflag5 = pcall(writefile, "rymogspriv_export.json", text) end
+			if writefile then slicedflag5 = pcall(writefile, "kavalhubpub6.json", text) end
 			local writeClipboard = setclipboard or toclipboard or syn and syn.write_clipboard
 			local slicedflag6 = false
 			if type(writeClipboard) == "function" then slicedflag6 = pcall(writeClipboard, text) end
@@ -16240,7 +16249,7 @@ do
 				return
 			end  -- LEAKED BY SLICED | discord.gg/pubmethod
 			pcall(function()
-				if writefile then writefile("rymogspriv_backup.json", game:GetService("HttpService"):JSONEncode(tbl)) end
+				if writefile then writefile("kavalhubpub7.json", game:GetService("HttpService"):JSONEncode(tbl)) end
 			end)
 			local slicedv26, slicedv27, slicedv28 = pairs(result)
 			local slicedn20 = 0
@@ -16256,7 +16265,7 @@ do
 			tbl.Sizes = tbl.Sizes or {}
 			tbl.UIHidden = tbl.UIHidden or {}
 			pcall(slicedfn2)
-			slicedfn62(slicedn20 .. " keys imported (old config kept as rymogspriv_backup.json). Re-inject to apply everywhere.")
+			slicedfn62(slicedn20 .. " keys imported (old config kept as kavalhubpub7.json). Re-inject to apply everywhere.")
 		end)
 		textLabel5 = Instance.new("TextLabel", slicedv13)  -- LEAKED BY SLICED | discord.gg/pubmethod
 		textLabel5.Size = UDim2.new(1, 0, 0, 30)
@@ -18824,8 +18833,8 @@ task.spawn(function()
 		uiStroke2.Color = slicedtbl7.ACC
 		uiStroke2.Thickness = 1.5
 		pcall(function()
-			if isfile and isfile("rymogspriv_utilpanel.json") then
-				local data = game:GetService("HttpService"):JSONDecode(readfile("rymogspriv_utilpanel.json"))
+			if isfile and isfile("kavalhubpub4.json") then
+				local data = game:GetService("HttpService"):JSONDecode(readfile("kavalhubpub4.json"))
 				if data and data.x and data.y then frame7.Position = UDim2.fromOffset(data.x, data.y) end
 			end
 		end)
@@ -18874,7 +18883,7 @@ task.spawn(function()
 				slicedflag7 = false
 				pcall(function()  -- LEAKED BY SLICED | discord.gg/pubmethod
 					if writefile then
-						writefile("rymogspriv_utilpanel.json", game:GetService("HttpService"):JSONEncode({ x = frame7.AbsolutePosition.X, y = frame7.AbsolutePosition.Y }))
+						writefile("kavalhubpub4.json", game:GetService("HttpService"):JSONEncode({ x = frame7.AbsolutePosition.X, y = frame7.AbsolutePosition.Y }))
 					end
 				end)
 			end
@@ -19423,8 +19432,8 @@ task.spawn(function()
 		local y = 300
 		local slicedtbl8 = { s = {} }
 		pcall(function()
-			if isfile and isfile("rymogspriv_optimizer.json") then
-				local data = game:GetService("HttpService"):JSONDecode(readfile("rymogspriv_optimizer.json"))
+			if isfile and isfile("kavalhubpub5.json") then
+				local data = game:GetService("HttpService"):JSONDecode(readfile("kavalhubpub5.json"))
 				if data and data.x then  -- LEAKED BY SLICED | discord.gg/pubmethod
 					x = data.x
 					y = data.y
@@ -19442,7 +19451,7 @@ task.spawn(function()
 			task.delay(0.4, function()
 				slicedflag5 = false
 				pcall(function()
-					if writefile then writefile("rymogspriv_optimizer.json", game:GetService("HttpService"):JSONEncode(slicedtbl8)) end
+					if writefile then writefile("kavalhubpub5.json", game:GetService("HttpService"):JSONEncode(slicedtbl8)) end
 				end)
 			end)
 		end
