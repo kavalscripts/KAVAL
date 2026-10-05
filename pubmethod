@@ -165,6 +165,62 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local Stats  -- LEAKED BY SLICED | discord.gg/pubmethod
 
+local function addPanelMinimizeButton(panel, header, keepVisible, collapsedHeight, backgroundColor, textColor, font, rightOffset)
+	local button = Instance.new("TextButton")
+	button.Name = "MinimizeButton"
+	button.Parent = header
+	button.Size = UDim2.fromOffset(20, 20)
+	button.Position = UDim2.new(1, -(rightOffset or 52), 0.5, -10)
+	button.BackgroundColor3 = backgroundColor
+	button.BorderSizePixel = 0
+	button.AutoButtonColor = false
+	button.Font = font or Enum.Font.GothamBold
+	button.TextSize = 13
+	button.TextColor3 = textColor
+	button.Text = "-"
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 5)
+
+	local minimized = false
+	local originalSize
+	local originalAutomaticSize
+	local savedVisibility = {}
+	local keep = {}
+	keep[header] = true
+	for _, object in ipairs(keepVisible or { header }) do
+		keep[object] = true
+	end
+
+	button.Activated:Connect(function()
+		if minimized then
+			for object, wasVisible in pairs(savedVisibility) do
+				if object.Parent == panel then object.Visible = wasVisible end
+			end
+			panel.AutomaticSize = Enum.AutomaticSize.None
+			panel.Size = originalSize
+			panel.AutomaticSize = originalAutomaticSize
+			button.Text = "-"
+			minimized = false
+			return
+		end
+
+		originalSize = panel.Size
+		originalAutomaticSize = panel.AutomaticSize
+		table.clear(savedVisibility)
+		for _, object in ipairs(panel:GetChildren()) do
+			if object:IsA("GuiObject") and not keep[object] then
+				savedVisibility[object] = object.Visible
+				object.Visible = false
+			end
+		end
+		panel.AutomaticSize = Enum.AutomaticSize.None
+		panel.Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset, 0, collapsedHeight)
+		button.Text = "+"
+		minimized = true
+	end)
+
+	return button
+end
+
 do
 	local Lighting = game:GetService("Lighting")
 	Stats = game:GetService("Stats")
@@ -1343,7 +1399,7 @@ do
 			Font = slicedtbl2.FontMain,
 			TextSize = 13,
 			TextColor3 = Color3.fromRGB(255, 255, 255),
-			Size = UDim2.new(1, -50, 1, 0),
+			Size = UDim2.new(1, -70, 1, 0),
 			Position = UDim2.new(0, 12, 0, 0),
 			BackgroundTransparency = 1,
 			TextXAlignment = 0,  -- LEAKED BY SLICED | discord.gg/pubmethod
@@ -1368,6 +1424,7 @@ do
 				Frame2.Visible = false
 			end)  -- LEAKED BY SLICED | discord.gg/pubmethod
 		end
+		addPanelMinimizeButton(Frame2, Frame3, { Frame3 }, 36, slicedtbl2.CardBg, slicedtbl2.TextSub, slicedtbl2.FontMain, slicedarg4 and 54 or 28)
 		local Frame4 = slicedfn6("Frame", {
 			Parent = Frame2,
 			Size = UDim2.new(1, -20, 1, -42),
@@ -6263,14 +6320,21 @@ do
 	}
 	_G.RouteShaping = routeShaping
 
-	local function computeRoute_(arg, slicedarg2)
+	local function computeRoute_(arg, slicedarg2, maxLift)
 		local magnitude = (arg - slicedarg2).Magnitude
 		local slicedn8 = math.max(arg.Y, slicedarg2.Y)
+		local routeCeiling = slicedn8 + math.clamp(tonumber(maxLift) or 110, 12, 110)
+		local function routeWithinCeiling(route)
+			for _, point in ipairs(route) do
+				if point.Y > routeCeiling then return false end
+			end
+			return true
+		end
 		local slicedv4 = routeShaping.plotNear(arg)
 		local slicedv5 = routeShaping.plotNear(slicedarg2)
 		if _G.SDPlanner ~= false then
 			local ok, result = pcall(_G.RySDRoute, arg, slicedarg2)
-			if ok and result and #result >= 2 then  -- LEAKED BY SLICED | discord.gg/pubmethod
+			if ok and result and #result >= 2 and routeWithinCeiling(result) then  -- LEAKED BY SLICED | discord.gg/pubmethod
 				local slicedn9 = tonumber(_G.SDValidateMargin) or 14
 				local slicedflag2 = true
 				for i = 1, #result - 1 do
@@ -6291,7 +6355,7 @@ do
 		end
 		if _G.PathDodge ~= false then
 			local slicedv6, slicedv7 = routeShaping.dodge(arg, slicedarg2, slicedv4, slicedv5)
-			if slicedv6 then  -- LEAKED BY SLICED | discord.gg/pubmethod
+			if slicedv6 and routeWithinCeiling(slicedv6) then  -- LEAKED BY SLICED | discord.gg/pubmethod
 				_G.LastRouteKind = "dodge:" .. tostring(slicedv7)
 				return routeShaping.round(slicedv6)
 			end
@@ -6300,15 +6364,19 @@ do
 		local slicedtbl7 = { 12, 20, 35, 55, 80, 110 }
 		if num then table.insert(slicedtbl7, 1, num) end
 		for _, slicedv6 in ipairs(slicedtbl7) do
-			local slicedv7 = slicedfn19(arg, slicedarg2, slicedn8 + slicedv6, magnitude)
-			if slicedfn20(arg, slicedv7) then  -- LEAKED BY SLICED | discord.gg/pubmethod
-				_G.LastRouteKind = "crest+" .. slicedv6
+			local lift = math.min(slicedv6, routeCeiling - slicedn8)
+			if lift <= 0 then continue end
+			local slicedv7 = slicedfn19(arg, slicedarg2, slicedn8 + lift, magnitude)
+			if slicedfn20(arg, slicedv7) and routeWithinCeiling(slicedv7) then  -- LEAKED BY SLICED | discord.gg/pubmethod
+				_G.LastRouteKind = "crest+" .. lift
 				table.insert(slicedv7, 1, arg)
 				return slicedv7
 			end
 		end
 		for _, slicedv6 in ipairs({ 25, 50, 90 }) do
-			local slicedn9 = slicedn8 + slicedv6
+			local lift = math.min(slicedv6, routeCeiling - slicedn8)
+			if lift <= 0 then continue end
+			local slicedn9 = slicedn8 + lift
 			local vector2 = Vector3.new(arg.X, slicedn9, arg.Z)
 			local vector3 = Vector3.new(slicedarg2.X, slicedn9, slicedarg2.Z)
 			if ryPathClear(arg, vector2) and ryPathClear(vector2, vector3) and ryPathClear(vector3, slicedarg2) then  -- LEAKED BY SLICED | discord.gg/pubmethod
@@ -6317,13 +6385,13 @@ do
 			end
 		end
 		local slicedv6 = voxelRoute_(arg, slicedarg2)
-		if slicedv6 and #slicedv6 > 0 then
+		if slicedv6 and #slicedv6 > 0 and routeWithinCeiling(slicedv6) then
 			_G.LastRouteKind = "voxel"
 			table.insert(slicedv6, 1, arg)
 			return slicedv6
 		end
 		_G.LastRouteKind = "fallback"
-		local slicedv7 = slicedfn19(arg, slicedarg2, slicedn8 + 110, magnitude)  -- LEAKED BY SLICED | discord.gg/pubmethod
+		local slicedv7 = slicedfn19(arg, slicedarg2, routeCeiling, magnitude)  -- LEAKED BY SLICED | discord.gg/pubmethod
 		table.insert(slicedv7, 1, arg)
 		return slicedv7
 	end
@@ -6338,6 +6406,70 @@ end
 
 voxelRoute = slicedtbl3.VoxelRoute
 computeRoute = slicedtbl3.ComputeRoute
+
+local function moveAssemblyToPosition(root, target, speed)
+	if not (root and root.Parent and typeof(target) == "Vector3") then return false, "missing root or destination" end
+
+	local humanoid = root.Parent:FindFirstChildOfClass("Humanoid")
+	local autoRotate = humanoid and humanoid.AutoRotate
+	local anchored = root.Anchored
+	if anchored then root.Anchored = false end
+	if humanoid then humanoid.AutoRotate = false end
+
+	speed = math.max(1, tonumber(speed) or 70)
+	local startedAt = os.clock()
+	local initialDelta = target - root.Position
+	local timeout = math.clamp(initialDelta.Magnitude / speed + math.abs(initialDelta.Y) / 12 + 8, 8, 45)
+	local closestDistance = initialDelta.Magnitude
+	local lastProgressAt = startedAt
+	local reached = false
+	local reason = "movement timed out"
+
+	while root.Parent and os.clock() - startedAt < timeout do
+		if _G.TPStop then
+			reason = "movement cancelled"
+			break
+		end
+
+		local delta = target - root.Position
+		local horizontal = Vector3.new(delta.X, 0, delta.Z)
+		if horizontal.Magnitude <= 3.5 and math.abs(delta.Y) <= 4 then
+			reached = true
+			reason = nil
+			break
+		end
+
+		local velocity = Vector3.zero
+		if horizontal.Magnitude > 3.5 then
+			local horizontalSpeed = math.min(speed, horizontal.Magnitude * 2)
+			velocity = horizontal.Unit * horizontalSpeed
+		else
+			velocity = Vector3.new(0, math.clamp(delta.Y * 2, -12, 12), 0)
+		end
+
+		root.AssemblyLinearVelocity = velocity
+		root.AssemblyAngularVelocity = Vector3.zero
+		RunService.Heartbeat:Wait()
+
+		local distance = (target - root.Position).Magnitude
+		if distance < closestDistance - 0.75 then
+			closestDistance = distance
+			lastProgressAt = os.clock()
+		elseif os.clock() - lastProgressAt >= 2.5 then
+			reason = "no movement progress"
+			break
+		end
+	end
+
+	if root.Parent then
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+		root.Anchored = anchored
+	end
+	if humanoid and humanoid.Parent and autoRotate ~= nil then humanoid.AutoRotate = autoRotate end
+
+	return reached, reason
+end
 
 do
 	local slicedtbl4 = {}
@@ -7328,7 +7460,7 @@ doVelocityTP = function(arg)
 				if n >= 11 then slicedn2 = 14.5 end
 			end
 			local vector = Vector3.new(position.X, slicedn2, position.Z)
-			local slicedtbl4 = computeRoute(humanoidRootPart.Position, vector, nil)
+			local slicedtbl4 = computeRoute(humanoidRootPart.Position, vector, 35)
 			if not slicedtbl4 or #slicedtbl4 == 0 then slicedtbl4 = { vector } end
 			local slicedv11 = _smoothRoute(slicedtbl4)
 			_isStraightRoute(humanoidRootPart.Position, slicedv11)
@@ -7431,7 +7563,7 @@ doVelocityTP = function(arg)
 			if slicedarg2.route then return slicedarg2 end
 			local slicedv22 = nil
 			pcall(function()
-				slicedv22 = computeRoute(position2, slicedarg2.coord)
+				slicedv22 = computeRoute(position2, slicedarg2.coord, 35)
 			end)
 			local kind = tostring(_G.LastRouteKind or "")
 			slicedarg2.route = slicedv22
@@ -7516,7 +7648,7 @@ doVelocityTP = function(arg)
 			slicedv24[#slicedv24] = coord
 			slicedv23 = _smoothRoute(slicedv24)
 		else
-			slicedv23 = _smoothRoute(computeRoute(humanoidRootPart.Position, coord))
+			slicedv23 = _smoothRoute(computeRoute(humanoidRootPart.Position, coord, 35))
 		end
 		if _G.TPDebug ~= false then slicedfn12(string.format("[TP] route %s, %d pts, %.0f studs", tostring(_G.LastRouteKind), #slicedv23, slicedfn14(slicedv23))) end
 		local slicedtbl7 = {}
@@ -7653,7 +7785,7 @@ doVelocityTP = function(arg)
 				if _G.TPDebug ~= false then  -- LEAKED BY SLICED | discord.gg/pubmethod
 					slicedfn12(string.format("[TP] REACH recover: %.0f studs off dest -> RE-PATHFIND (contourne, pas de traverse tout droit)", magnitude))
 				end
-				local slicedtbl9 = computeRoute(humanoidRootPart.Position, coord)
+				local slicedtbl9 = computeRoute(humanoidRootPart.Position, coord, 35)
 				if not slicedtbl9 or #slicedtbl9 == 0 then slicedtbl9 = { coord } end
 				velMoveThrough(humanoidRootPart, _smoothRoute(slicedtbl9), slicedv24, true, true)
 				if humanoidRootPart and humanoidRootPart.Parent then
@@ -7817,6 +7949,65 @@ doVelocityTP = function(arg)
 					_vzL(humanoidRootPart4)
 					_vzA(humanoidRootPart4)
 				end)
+			end
+		end
+		local cloneReturned = slicedflag6 or localPlayer2.Character ~= character2
+		if cloneReturned and not _G.TPStop then
+			local character3 = localPlayer2.Character
+			local humanoidRootPart6 = character3 and (character3:FindFirstChild("HumanoidRootPart") or character3:WaitForChild("HumanoidRootPart", 2))
+			local destination = position
+			local targetUID = _petUid(slicedv6)
+			local scanOk, currentTargets = pcall(scanForTP, true)
+			if scanOk and type(currentTargets) == "table" then
+				for _, currentTarget in ipairs(currentTargets) do
+					if _petUid(currentTarget) == targetUID and typeof(currentTarget.position) == "Vector3" then
+						destination = currentTarget.position
+						break
+					end
+				end
+			end
+			if humanoidRootPart6 and humanoidRootPart6.Parent then
+				_G.StealSay("clone returned -> moving to " .. tostring(name) .. " at assembly speed 70")
+				local moveOk, reached, reason = pcall(moveAssemblyToPosition, humanoidRootPart6, destination, 70)
+				if not moveOk then
+					slicedfn12("[TP] post-clone move failed: " .. tostring(reached))
+				else
+					if not reached and reason == "no movement progress" and not _G.TPStop then
+						local fallbackRoute
+						local routeOk, routeResult = pcall(computeRoute, humanoidRootPart6.Position, destination, 35)
+						if routeOk and type(routeResult) == "table" and #routeResult > 0 then
+							fallbackRoute = _smoothRoute(routeResult)
+						else
+							fallbackRoute = { destination }
+						end
+						local fallbackAnchored = humanoidRootPart6.Anchored
+						if fallbackAnchored then humanoidRootPart6.Anchored = false end
+						_G.StealSay("post-clone direct movement blocked; retrying with a height-limited route")
+						local fallbackOk, fallbackError = pcall(velMoveThrough, humanoidRootPart6, fallbackRoute, 70, true, true)
+						if not fallbackOk then
+							slicedfn12("[TP] post-clone route failed: " .. tostring(fallbackError))
+						end
+						local fallbackDeadline = os.clock() + math.clamp((destination - humanoidRootPart6.Position).Magnitude / 70 * 2 + 5, 5, 30)
+						while humanoidRootPart6.Parent and not _G.TPStop and os.clock() < fallbackDeadline do
+							if (humanoidRootPart6.Position - destination).Magnitude <= 5 then
+								reached = true
+								break
+							end
+							task.wait(0.1)
+						end
+						if humanoidRootPart6.Parent then
+							humanoidRootPart6.Anchored = fallbackAnchored
+						end
+						reason = reached and nil or "route did not reach the target"
+					end
+					if not reached then
+						slicedfn12("[TP] post-clone move stopped: " .. tostring(reason))
+					else
+						_G.StealSay("post-clone move reached " .. tostring(name))
+					end
+				end
+			else
+				slicedfn12("[TP] post-clone move skipped: returned character has no HumanoidRootPart")
 			end
 		end
 		isTeleporting = false  -- LEAKED BY SLICED | discord.gg/pubmethod
@@ -12606,7 +12797,7 @@ do
 				Font = slicedtbl2.FontMain,
 				TextSize = 10,  -- LEAKED BY SLICED | discord.gg/pubmethod
 				TextColor3 = slicedtbl2.TextMain,
-				Size = UDim2.new(1, -70, 1, 0),
+				Size = UDim2.new(1, -50, 1, 0),
 				Position = UDim2.new(0, 12, 0, 0),
 				BackgroundTransparency = 1,
 				TextXAlignment = 0,
@@ -14073,7 +14264,7 @@ do
 	frame4.BorderSizePixel = 0  -- LEAKED BY SLICED | discord.gg/pubmethod
 	textBox = Instance.new("TextBox", frame4)
 	textBox.Name = "SearchBox"
-	textBox.Size = UDim2.new(1, -238, 0, 30)
+	textBox.Size = UDim2.new(1, -264, 0, 30)
 	textBox.Position = UDim2.new(0, 12, 0.5, -15)
 	textBox.BackgroundColor3 = slicedtbl5.ROW
 	textBox.BorderSizePixel = 0
@@ -14093,7 +14284,7 @@ do
 	uiPadding.PaddingRight = UDim.new(0, 10)
 	local textLabel3 = Instance.new("TextLabel", frame4)
 	textLabel3.Size = UDim2.fromOffset(84, 16)
-	textLabel3.Position = UDim2.new(1, -214, 0.5, -8)  -- LEAKED BY SLICED | discord.gg/pubmethod
+	textLabel3.Position = UDim2.new(1, -240, 0.5, -8)  -- LEAKED BY SLICED | discord.gg/pubmethod
 	textLabel3.BackgroundTransparency = 1
 	textLabel3.Font = Enum.Font.GothamBold
 	textLabel3.TextSize = 10
@@ -14102,7 +14293,7 @@ do
 	textLabel3.Text = "FPS --"
 	local textLabel4 = Instance.new("TextLabel", frame4)
 	textLabel4.Size = UDim2.fromOffset(84, 16)
-	textLabel4.Position = UDim2.new(1, -126, 0.5, -8)
+	textLabel4.Position = UDim2.new(1, -152, 0.5, -8)
 	textLabel4.BackgroundTransparency = 1
 	textLabel4.Font = Enum.Font.GothamBold  -- LEAKED BY SLICED | discord.gg/pubmethod
 	textLabel4.TextSize = 10
@@ -14131,6 +14322,7 @@ do
 	textButton.MouseButton1Click:Connect(function()
 		frame.Visible = false
 	end)
+	addPanelMinimizeButton(frame, frame4, { frame2, frame4 }, 52, slicedtbl5.ROW, slicedtbl5.MUTED, Enum.Font.GothamBold, 62)
 	task.spawn(function()
 		local Stats2 = game:GetService("Stats")
 		local localPlayer6 = game:GetService("Players").LocalPlayer
@@ -16653,7 +16845,7 @@ task.spawn(function()
 		frame8.Size = UDim2.new(1, 0, 0, 32)
 		frame8.BackgroundTransparency = 1  -- LEAKED BY SLICED | discord.gg/pubmethod
 		local textLabel3 = Instance.new("TextLabel", frame8)
-		textLabel3.Size = UDim2.new(1, -36, 1, 0)
+		textLabel3.Size = UDim2.new(1, -64, 1, 0)
 		textLabel3.Position = UDim2.new(0, 12, 0, 0)
 		textLabel3.BackgroundTransparency = 1
 		textLabel3.Font = Enum.Font.GothamBold
@@ -16663,7 +16855,7 @@ task.spawn(function()
 		textLabel3.Text = "INVIS STEAL"
 		local textButton = Instance.new("TextButton", frame8)
 		textButton.Size = UDim2.fromOffset(20, 20)  -- LEAKED BY SLICED | discord.gg/pubmethod
-		textButton.Position = UDim2.new(1, -26, 0.5, -10)
+		textButton.Position = UDim2.new(1, -52, 0.5, -10)
 		textButton.BackgroundColor3 = slicedtbl9.ROW
 		textButton.Text = "Ã"
 		textButton.Font = Enum.Font.GothamBold
@@ -16674,6 +16866,7 @@ task.spawn(function()
 		textButton.MouseButton1Click:Connect(function()
 			frame7.Visible = false
 		end)  -- LEAKED BY SLICED | discord.gg/pubmethod
+		addPanelMinimizeButton(frame7, frame8, { frame8 }, 32, slicedtbl9.ROW, slicedtbl9.MUTED, Enum.Font.GothamBold, 26)
 		local frame9 = Instance.new("Frame", frame7)
 		frame9.Size = UDim2.new(1, -20, 0, 1)
 		frame9.Position = UDim2.new(0, 10, 0, 33)
@@ -18847,7 +19040,7 @@ task.spawn(function()
 		frame9.BackgroundColor3 = slicedtbl7.ACC
 		frame9.BorderSizePixel = 0
 		local textLabel3 = Instance.new("TextLabel", frame8)
-		textLabel3.Size = UDim2.new(1, -38, 1, 0)
+		textLabel3.Size = UDim2.new(1, -70, 1, 0)
 		textLabel3.Position = UDim2.new(0, 18, 0, 0)
 		textLabel3.BackgroundTransparency = 1  -- LEAKED BY SLICED | discord.gg/pubmethod
 		textLabel3.Font = Enum.Font.GothamBold
@@ -18857,7 +19050,7 @@ task.spawn(function()
 		textLabel3.Text = "UTILITY"
 		local textButton = Instance.new("TextButton", frame8)
 		textButton.Size = UDim2.fromOffset(20, 20)
-		textButton.Position = UDim2.new(1, -26, 0.5, -10)
+		textButton.Position = UDim2.new(1, -52, 0.5, -10)
 		textButton.BackgroundColor3 = slicedtbl7.ROW
 		textButton.Text = "Ã"
 		textButton.Font = Enum.Font.GothamBold
@@ -18868,6 +19061,7 @@ task.spawn(function()
 		textButton.MouseButton1Click:Connect(function()
 			frame7.Visible = false
 		end)
+		addPanelMinimizeButton(frame7, frame8, { frame8 }, 34, slicedtbl7.ROW, slicedtbl7.MUTED, Enum.Font.GothamBold, 26)
 		local slicedflag7 = false
 		local position = nil
 		local position2 = nil
@@ -19471,7 +19665,7 @@ task.spawn(function()
 		frame8.Size = UDim2.new(1, 0, 0, 32)
 		frame8.BackgroundTransparency = 1
 		local textLabel3 = Instance.new("TextLabel", frame8)
-		textLabel3.Size = UDim2.new(1, -36, 1, 0)
+		textLabel3.Size = UDim2.new(1, -64, 1, 0)
 		textLabel3.Position = UDim2.new(0, 12, 0, 0)
 		textLabel3.BackgroundTransparency = 1
 		textLabel3.Font = Enum.Font.GothamBold
@@ -19481,7 +19675,7 @@ task.spawn(function()
 		textLabel3.Text = "Optimizer"
 		local textButton = Instance.new("TextButton", frame8)
 		textButton.Size = UDim2.fromOffset(20, 20)
-		textButton.Position = UDim2.new(1, -26, 0.5, -10)
+		textButton.Position = UDim2.new(1, -52, 0.5, -10)
 		textButton.BackgroundColor3 = slicedtbl7.ROW
 		textButton.Text = "Ã"
 		textButton.Font = Enum.Font.GothamBold
@@ -19492,6 +19686,7 @@ task.spawn(function()
 		textButton.MouseButton1Click:Connect(function()
 			frame7.Visible = false
 		end)
+		addPanelMinimizeButton(frame7, frame8, { frame8 }, 32, slicedtbl7.ROW, slicedtbl7.MUTED, Enum.Font.GothamBold, 26)
 		local slicedflag6 = false
 		local position = nil
 		local position2 = nil
@@ -20109,7 +20304,7 @@ task.spawn(function()
 		})
 		slicedfn6("TextLabel", {
 			Parent = Frame2,
-			Size = UDim2.new(1, 0, 1, 0),
+			Size = UDim2.new(1, -34, 1, 0),
 			BackgroundTransparency = 1,
 			Text = "GRIEF DETECTOR",
 			Font = slicedtbl2.FontMain,
@@ -20117,6 +20312,7 @@ task.spawn(function()
 			TextColor3 = slicedtbl2.TextSub,
 			TextXAlignment = Enum.TextXAlignment.Left,  -- LEAKED BY SLICED | discord.gg/pubmethod
 		})
+		addPanelMinimizeButton(Frame, Frame2, { Frame2 }, 34, slicedtbl2.ButtonBg, slicedtbl2.TextMain, slicedtbl2.FontMain, 26)
 		slicedfn9(Frame2, Frame)
 		local Frame3 = slicedfn6("Frame", {
 			Parent = Frame,
@@ -20180,7 +20376,7 @@ task.spawn(function()
 		local Frame5 = slicedfn6("Frame", { Parent = Frame4, Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1, Active = true })
 		slicedfn6("TextLabel", {
 			Parent = Frame5,
-			Size = UDim2.new(1, -46, 0, 18),
+			Size = UDim2.new(1, -70, 0, 18),
 			Position = UDim2.fromOffset(10, 5),
 			BackgroundTransparency = 1,
 			Text = "GRIEF HISTORY",
@@ -20191,7 +20387,7 @@ task.spawn(function()
 		})
 		local TextLabel2 = slicedfn6("TextLabel", {
 			Parent = Frame5,
-			Size = UDim2.new(1, -46, 0, 12),
+			Size = UDim2.new(1, -70, 0, 12),
 			Position = UDim2.fromOffset(10, 22),
 			BackgroundTransparency = 1,
 			Text = "0 griefs this session",
@@ -20230,6 +20426,7 @@ task.spawn(function()
 			AutomaticCanvasSize = Enum.AutomaticSize.Y,
 			slicedfn6("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5) }),
 		})
+		addPanelMinimizeButton(Frame4, Frame5, { Frame5 }, 38, slicedtbl2.ButtonBg, slicedtbl2.TextMain, slicedtbl2.FontMain, 56)
 		local TextLabel3 = slicedfn6("TextLabel", {
 			Parent = ScrollingFrame2,
 			Name = "Empty",
@@ -20634,7 +20831,7 @@ task.spawn(function()  -- LEAKED BY SLICED | discord.gg/pubmethod
 		frame8.BackgroundTransparency = 1
 		frame8.Active = true  -- LEAKED BY SLICED | discord.gg/pubmethod
 		local textLabel3 = Instance.new("TextLabel", frame8)
-		textLabel3.Size = UDim2.new(1, -40, 1, 0)
+		textLabel3.Size = UDim2.new(1, -68, 1, 0)
 		textLabel3.Position = UDim2.fromOffset(12, 0)
 		textLabel3.BackgroundTransparency = 1
 		textLabel3.Font = Enum.Font.GothamBold
@@ -20644,7 +20841,7 @@ task.spawn(function()  -- LEAKED BY SLICED | discord.gg/pubmethod
 		textLabel3.Text = "CFRAME BOOST"
 		local textButton = Instance.new("TextButton", frame8)
 		textButton.Size = UDim2.fromOffset(22, 22)  -- LEAKED BY SLICED | discord.gg/pubmethod
-		textButton.Position = UDim2.new(1, -28, 0.5, -11)
+		textButton.Position = UDim2.new(1, -54, 0.5, -11)
 		textButton.BackgroundColor3 = c.ROW
 		textButton.Text = "Ã"
 		textButton.TextColor3 = c.MUTED
@@ -20655,6 +20852,7 @@ task.spawn(function()  -- LEAKED BY SLICED | discord.gg/pubmethod
 		textButton.MouseButton1Click:Connect(function()
 			frame7.Visible = false
 		end)  -- LEAKED BY SLICED | discord.gg/pubmethod
+		addPanelMinimizeButton(frame7, frame8, { frame8 }, 32, c.ROW, c.MUTED, Enum.Font.GothamBold, 28)
 		slicedfn9(frame8, frame7)
 		local frame9 = Instance.new("Frame", frame7)
 		frame9.Size = UDim2.new(1, -20, 0, 0)
