@@ -1,0 +1,1783 @@
+-- deobf by prince
+
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local SoundService = game:GetService("SoundService")
+local UserInputService = game:GetService("UserInputService")
+local placeId = game.PlaceId
+
+if placeId ~= 99606176102979 and placeId ~= 109983668079237 then
+	warn("[KAVAL NOTIFIER] PlaceId inválido (" .. tostring(placeId) .. "). Script detenido.")
+	return
+end
+
+if CoreGui:FindFirstChild("KavalNotifier_GUI") then
+	CoreGui.KavalNotifier_GUI:Destroy()
+end
+
+if SoundService:FindFirstChild("KavalNotifSound") then
+	SoundService.KavalNotifSound:Destroy()
+end
+
+local localPlayer = Players.LocalPlayer
+
+if localPlayer.Character then
+	local head = localPlayer.Character:FindFirstChild("Head")
+
+	if head and head:FindFirstChild("KAVAL_USER_ESP") then
+		head.KAVAL_USER_ESP:Destroy()
+	end
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "KavalNotifier_GUI"
+screenGui.Parent = CoreGui
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local tbl = {
+	BgDark = Color3.fromRGB(5, 5, 5),
+	BgMid = Color3.fromRGB(10, 10, 10),
+	BgCard = Color3.fromRGB(18, 18, 18),
+	BgCardHover = Color3.fromRGB(30, 30, 30),
+	Sidebar = Color3.fromRGB(8, 8, 8),
+	Accent1 = Color3.fromRGB(90, 90, 90),
+	Accent2 = Color3.fromRGB(225, 225, 225),
+	AccentGlow = Color3.fromRGB(48, 48, 48),
+	White = Color3.fromRGB(245, 245, 245),
+	TextDim = Color3.fromRGB(145, 145, 145),
+	Off = Color3.fromRGB(48, 48, 48),
+	Green = Color3.fromRGB(45, 210, 110),
+	GreenDim = Color3.fromRGB(25, 60, 40),
+	Red = Color3.fromRGB(220, 60, 70),
+	HighlightC = Color3.fromRGB(255, 75, 75),
+	MidlightC = Color3.fromRGB(175, 175, 175),
+}
+
+local tbl2 = {
+	Midlights = true,
+	Highlights = true,
+	AutoJoin = false,
+	AutoJoinRetries = 3,
+	PlaySound = true,
+	ToggleKey = "RightShift",
+	UseWhitelist = false,
+	Whitelist = {},
+}
+
+pcall(function()
+	if isfile and readfile and isfile("KavalNotifier_Config.json") then
+		local data = HttpService:JSONDecode(readfile("KavalNotifier_Config.json"))
+
+		if type(data) == "table" then
+			for k, v in pairs(data) do
+				if k == "Whitelist" and type(v) == "table" then
+					for k2, v2 in pairs(v) do
+						tbl2.Whitelist[k2] = v2
+					end
+				else
+					tbl2[k] = v
+				end
+			end
+		end
+	end
+end)
+
+task.spawn(function()
+	local json = HttpService:JSONEncode(tbl2)
+
+	while _G.KavalRunning ~= false do
+		task.wait(3)
+
+		pcall(function()
+			local json2 = HttpService:JSONEncode(tbl2)
+
+			if json2 ~= json then
+				if writefile then
+					writefile("KavalNotifier_Config.json", json2)
+				end
+
+				json = json2
+			end
+		end)
+	end
+end)
+
+local tbl3 = {
+	"Los Nooo My Hotspotsitos",
+	"Serafinna Medusella",
+	"La Grande Combinassion",
+	"La Easter Grande",
+	"Rang Ring Bus",
+	"Guest 666",
+	"Los Mi Gatitos",
+	"Los Chicleteiras",
+	"Noo My Eggs",
+	"67",
+	"Donkeyturbo Express",
+	"Mariachi Corazoni",
+	"Los Burritos",
+	"Los 25",
+	"Tacorillo Crocodillo",
+	"Swag Soda",
+	"Noo my Heart",
+	"Chimnino",
+	"Los Combinasionas",
+	"Chicleteira Noelteira",
+	"Fishino Clownino",
+	"Baskito",
+	"Tacorita Bicicleta",
+	"Los Sweethearts",
+	"Spinny Hammy",
+	"Nuclearo Dinosauro",
+	"Las Sis",
+	"DJ Panda",
+	"Chicleteira Cupideira",
+	"La Karkerkar Combinasion",
+	"Chillin Chili",
+	"Chipso and Queso",
+	"Money Money Reindeer",
+	"Money Money Puggy",
+	"Churrito Bunnito",
+	"Celularcini Viciosini",
+	"Los Planitos",
+	"Los Mobilis",
+	"Los 67",
+	"Mieteteira Bicicleteira",
+	"Tuff Toucan",
+	"La Spooky Grande",
+	"Los Spooky Combinasionas",
+	"Cigno Fulgoro",
+	"Los Candies",
+	"Los Hotspositos",
+	"Los Jolly Combinasionas",
+	"Los Cupids",
+	"Los Puggies",
+	"W or L",
+	"Tralalalaledon",
+	"La Extinct Grande Combinasion",
+	"Tralaledon",
+	"La Jolly Grande",
+	"Los Primos",
+	"Bacuru and Egguru",
+	"Eviledon",
+	"Los Tacoritas",
+	"Lovin Rose",
+	"Tang Tang Kelentang",
+	"Ketupat Kepat",
+	"Los Bros",
+	"Tictac Sahur",
+	"La Romantic Grande",
+	"Gingerat Gerat",
+	"Orcaledon",
+	"La Lucky Grande",
+	"Ketchuru and Masturu",
+	"Jolly Jolly Sahur",
+	"Garama and Madundung",
+	"Rosetti Tualetti",
+	"Nacho Spyder",
+	"Hopilikalika Hopilikalako",
+	"Festive 67",
+	"Sammyni Fattini",
+	"Love Love Bear",
+	"La Ginger Sekolah",
+	"Spooky and Pumpky",
+	"Boppin Bunny",
+	"Lavadorito Spinito",
+	"La Food Combinasion",
+	"Los Spaghettis",
+	"La Casa Boo",
+	"Fragrama and Chocrama",
+	"Los Sekolahs",
+	"Foxini Lanternini",
+	"La Secret Combinasion",
+	"Los Amigos",
+	"Reinito Sleighito",
+	"Ketupat Bros",
+	"Burguro and Fryuro",
+	"Cooki and Milki",
+	"Capitano Moby",
+	"Rosey and Teddy",
+	"Popcuru and Fizzuru",
+	"Hydra Bunny",
+	"Celestial Pegasus",
+	"Cerberus",
+	"La Supreme Combinasion",
+	"Dragon Cannelloni",
+	"Dragon Gingerini",
+	"Headless Horseman",
+	"Hydra Dragon Cannelloni",
+	"Griffin",
+	"Skibidi Toilet",
+	"Meowl",
+	"Strawberry Elephant",
+	"La Vacca Saturno Saturnita",
+	"Pandanini Frostini",
+	"Bisonte Giuppitere",
+	"Blackhole Goat",
+	"Jackorilla",
+	"Agarrini Ia Palini",
+	"Chachechi",
+	"Karkerkar Kurkur",
+	"Los Tortus",
+	"Los Matteos",
+	"Sammyni Spyderini",
+	"Trenostruzzo Turbo 4000",
+	"Chimpanzini Spiderini",
+	"Boatito Auratito",
+	"Fragola La La La",
+	"Dul Dul Dul",
+	"La Vacca Prese Presente",
+	"Frankentteo",
+	"Los Trios",
+	"Karker Sahur",
+	"Torrtuginni Dragonfrutini (Lucky Block)",
+	"Los Tralaleritos",
+	"Zombie Tralala",
+	"La Cucaracha",
+	"Vulturino Skeletono",
+	"Guerriro Digitale",
+	"Extinct Tralalero",
+	"Yess My Examine",
+	"Extinct Matteo",
+	"Las Tralaleritas",
+	"Rocco Disco",
+	"Reindeer Tralala",
+	"Las Vaquitas Saturnitas",
+	"Pumpkin Spyderini",
+	"Job Job Job Sahur",
+	"Los Karkeritos",
+	"Graipuss Medussi",
+	"Santteo",
+	"Fishboard",
+	"Buntteo",
+	"La Vacca Jacko Linterino",
+	"Triplito Tralaleritos",
+	"Trickolino",
+	"Paradiso Axolottino",
+	"GOAT",
+	"Giftini Spyderini",
+	"Los Spyderinis",
+	"Love Love Love Sahur",
+	"Perrito Burrito",
+	"1x1x1x1",
+	"Los Cucarachas",
+	"Easter Easter Sahur",
+	"Please My Present",
+	"Cuadramat and Pakrahmatmamat",
+	"Los Jobcitos",
+	"Nooo My Hotspot",
+	"Pot Hotspot (Lucky Block)",
+	"Noo My Examine",
+	"Telemorte",
+	"La Sahur Combinasion",
+	"List List List Sahur",
+	"Bunny Bunny Bunny Sahur",
+	"To To To Sahur",
+	"Pirulitoita Bicicletaire",
+	"25",
+	"Santa Hotspot",
+	"Horegini Boom",
+	"Quesadilla Crocodila",
+	"Pot Pumpkin",
+	"Naughty Naughty",
+	"Cupid Cupid Sahur",
+	"Ho Ho Ho Sahur",
+	"Mi Gatito",
+	"Chicleteira Bicicleteira",
+	"Eid Eid Eid Sahur",
+	"Cupid Hotspot",
+	"Spaghetti Tualetti (Lucky Block)",
+	"Esok Sekolah (Lucky Block)",
+	"Quesadillo Vampiro",
+	"Brunito Marsito",
+	"Chill Puppy",
+	"Burrito Bandito",
+	"Chicleteirina Bicicleteirina",
+	"Granny",
+	"Los Bunitos",
+	"Los Quesadillas",
+	"Bunito Bunito Spinito",
+	"Noo My Candy",
+}
+
+local sound = Instance.new("Sound")
+sound.Name = "KavalNotifSound"
+sound.SoundId = "rbxassetid://4590662766"
+sound.Volume = 1
+sound.Parent = SoundService
+
+local function fn()
+	if tbl2.PlaySound then
+		sound:Play()
+	end
+end
+
+local function fn2(arg)
+	local n = tonumber(arg) or 0
+	if n >= 1000000 then
+		return string.format("%.1fM", n / 1000000):gsub("%.0M", "M")
+	end
+
+	if n >= 1000 then
+		return string.format("%.1fK", n / 1000):gsub("%.0K", "K")
+	end
+	return tostring(n)
+end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 580, 0, 380)
+frame.Position = UDim2.new(0.5, -290, 1.5, 0)
+frame.BackgroundColor3 = tbl.BgDark
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.ClipsDescendants = true
+frame.Parent = screenGui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Thickness = 2
+uiStroke.Color = Color3.fromRGB(255, 255, 255)
+uiStroke.Transparency = 0.1
+uiStroke.Parent = frame
+local uiGradient = Instance.new("UIGradient")
+local colorSequence = ColorSequence.new
+local tbl4 = {}
+local v = ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 35))
+local v2 = ColorSequenceKeypoint.new(0.5, Color3.fromRGB(155, 155, 155))
+local new = ColorSequenceKeypoint.new
+local color = Color3.fromRGB
+tbl4[1] = v
+tbl4[2] = v2
+
+do
+	local values = table.pack(new(1, color(35, 35, 35)))
+	table.move(values, 1, values.n, 3, tbl4)
+end
+
+uiGradient.Color = colorSequence(tbl4)
+uiGradient.Parent = uiStroke
+local udim2 = UDim2.new(0.5, -290, 0.5, -190)
+local udim22 = UDim2.new(0.5, -290, 1.5, 0)
+local flag = true
+
+task.delay(0.1, function()
+	local tbl5 = { Position = udim2 }
+	TweenService:Create(frame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), tbl5):Play()
+end)
+
+local frame2 = Instance.new("Frame")
+frame2.Size = UDim2.new(0, 155, 1, 0)
+frame2.BackgroundColor3 = tbl.Sidebar
+frame2.BorderSizePixel = 0
+frame2.Parent = frame
+Instance.new("UICorner", frame2).CornerRadius = UDim.new(0, 12)
+local frame3 = Instance.new("Frame")
+frame3.Size = UDim2.new(0, 12, 1, 0)
+frame3.Position = UDim2.new(1, -12, 0, 0)
+frame3.BackgroundColor3 = tbl.Sidebar
+frame3.BorderSizePixel = 0
+frame3.Parent = frame2
+local frame4 = Instance.new("Frame")
+frame4.Size = UDim2.new(0, 1, 1, -20)
+frame4.Position = UDim2.new(1, 0, 0, 10)
+frame4.BackgroundColor3 = tbl.Off
+frame4.BorderSizePixel = 0
+frame4.Parent = frame2
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(1, 0, 0, 45)
+textLabel.Position = UDim2.new(0, 0, 0, 8)
+textLabel.BackgroundTransparency = 1
+textLabel.Text = "KAVAL"
+textLabel.Font = Enum.Font.GothamBlack
+textLabel.TextSize = 24
+textLabel.TextColor3 = tbl.Accent2
+textLabel.Parent = frame2
+local textLabel2 = Instance.new("TextLabel")
+textLabel2.Size = UDim2.new(1, 0, 0, 14)
+textLabel2.Position = UDim2.new(0, 0, 0, 42)
+textLabel2.BackgroundTransparency = 1
+textLabel2.Text = "N O T I F I E R"
+textLabel2.Font = Enum.Font.Gotham
+textLabel2.TextSize = 9
+textLabel2.TextColor3 = tbl.TextDim
+textLabel2.Parent = frame2
+local textButton = Instance.new("TextButton")
+textButton.Size = UDim2.new(0, 28, 0, 28)
+textButton.Position = UDim2.new(1, -40, 0, 14)
+textButton.BackgroundColor3 = tbl.BgCardHover
+textButton.BackgroundTransparency = 0.3
+textButton.Text = "X"
+textButton.Font = Enum.Font.GothamBold
+textButton.TextColor3 = Color3.fromRGB(255, 90, 90)
+textButton.TextSize = 12
+textButton.Parent = frame
+Instance.new("UICorner", textButton).CornerRadius = UDim.new(0, 8)
+local uiStroke2 = Instance.new("UIStroke")
+uiStroke2.Color = Color3.fromRGB(255, 90, 90)
+uiStroke2.Transparency = 0.7
+uiStroke2.Parent = textButton
+local textButton2 = Instance.new("TextButton")
+textButton2.Size = UDim2.new(0, 28, 0, 28)
+textButton2.Position = UDim2.new(1, -76, 0, 14)
+textButton2.BackgroundColor3 = tbl.BgCardHover
+textButton2.BackgroundTransparency = 0.3
+textButton2.Text = "-"
+textButton2.Font = Enum.Font.GothamBold
+textButton2.TextColor3 = Color3.fromRGB(255, 190, 80)
+textButton2.TextSize = 12
+textButton2.Parent = frame
+Instance.new("UICorner", textButton2).CornerRadius = UDim.new(0, 8)
+local uiStroke3 = Instance.new("UIStroke")
+uiStroke3.Color = Color3.fromRGB(255, 190, 80)
+uiStroke3.Transparency = 0.7
+uiStroke3.Parent = textButton2
+
+textButton.MouseEnter:Connect(function()
+	TweenService:Create(uiStroke2, TweenInfo.new(0.2), { Transparency = 0 }):Play()
+	TweenService:Create(textButton, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(200, 50, 50), TextColor3 = tbl.White }):Play()
+end)
+
+textButton.MouseLeave:Connect(function()
+	TweenService:Create(uiStroke2, TweenInfo.new(0.2), { Transparency = 0.7 }):Play()
+	TweenService:Create(textButton, TweenInfo.new(0.2), { BackgroundColor3 = tbl.BgCardHover, TextColor3 = Color3.fromRGB(255, 90, 90) }):Play()
+end)
+
+textButton2.MouseEnter:Connect(function()
+	TweenService:Create(uiStroke3, TweenInfo.new(0.2), { Transparency = 0 }):Play()
+	TweenService:Create(textButton2, TweenInfo.new(0.2), { BackgroundColor3 = Color3.fromRGB(200, 150, 40), TextColor3 = tbl.White }):Play()
+end)
+
+textButton2.MouseLeave:Connect(function()
+	TweenService:Create(uiStroke3, TweenInfo.new(0.2), { Transparency = 0.7 }):Play()
+	TweenService:Create(textButton2, TweenInfo.new(0.2), { BackgroundColor3 = tbl.BgCardHover, TextColor3 = Color3.fromRGB(255, 190, 80) }):Play()
+end)
+
+textButton.MouseButton1Click:Connect(function()
+	_G.KavalRunning = false
+	local tbl5 = { Position = udim22 }
+	TweenService:Create(frame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), tbl5):Play()
+
+	task.delay(0.4, function()
+		screenGui:Destroy()
+
+		if SoundService:FindFirstChild("KavalNotifSound") then
+			SoundService.KavalNotifSound:Destroy()
+		end
+
+		if localPlayer.Character then
+			local head = localPlayer.Character:FindFirstChild("Head")
+
+			if head and head:FindFirstChild("KAVAL_USER_ESP") then
+				head.KAVAL_USER_ESP:Destroy()
+			end
+		end
+	end)
+end)
+
+local function fn3()
+	flag = not flag
+
+	if flag then
+		frame.Visible = true
+		local tbl5 = { Position = udim2 }
+		TweenService:Create(frame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), tbl5):Play()
+	else
+		local tbl5 = { Position = udim22 }
+		local tween = TweenService:Create(frame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), tbl5)
+		tween:Play()
+
+		tween.Completed:Connect(function()
+			if not flag then
+				frame.Visible = false
+			end
+		end)
+	end
+end
+
+textButton2.MouseButton1Click:Connect(fn3)
+local textButton3 = Instance.new("TextButton")
+textButton3.Name = "FloatingBall"
+textButton3.Size = UDim2.new(0, 55, 0, 55)
+textButton3.Position = UDim2.new(0, 20, 0, 100)
+textButton3.BackgroundColor3 = Color3.fromRGB(6, 10, 20)
+textButton3.BorderSizePixel = 0
+textButton3.Text = "AJ"
+textButton3.Font = Enum.Font.GothamBlack
+textButton3.TextSize = 22
+textButton3.TextColor3 = Color3.fromRGB(255, 255, 255)
+textButton3.Active = true
+textButton3.Draggable = false
+textButton3.Parent = screenGui
+Instance.new("UICorner", textButton3).CornerRadius = UDim.new(1, 0)
+local uiStroke4 = Instance.new("UIStroke")
+uiStroke4.Thickness = 3
+uiStroke4.Color = Color3.fromRGB(90, 90, 90)
+uiStroke4.Transparency = 0
+uiStroke4.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+uiStroke4.Parent = textButton3
+local frame5 = Instance.new("Frame")
+frame5.Size = UDim2.new(1, -6, 1, -6)
+frame5.Position = UDim2.new(0, 3, 0, 3)
+frame5.BackgroundColor3 = Color3.fromRGB(4, 8, 16)
+frame5.BackgroundTransparency = 0.3
+frame5.BorderSizePixel = 0
+frame5.ZIndex = 0
+frame5.Parent = textButton3
+Instance.new("UICorner", frame5).CornerRadius = UDim.new(1, 0)
+textButton3.TextColor3 = Color3.fromRGB(255, 255, 255)
+textButton3.ZIndex = 2
+
+task.spawn(function()
+	while _G.KavalRunning do
+		local n = (math.sin(tick() * 4) + 1) / 2
+		local shade = math.floor(70 + n * 120)
+		uiStroke4.Color = Color3.fromRGB(shade, shade, shade)
+		uiStroke4.Thickness = 2.5 + n * 1.5
+		task.wait(0.03)
+	end
+end)
+
+pcall(function()
+	if isfile and readfile and isfile("KavalNotifier_BallPos.json") then
+		local data = HttpService:JSONDecode(readfile("KavalNotifier_BallPos.json"))
+
+		if data and data.x and data.y then
+			textButton3.Position = UDim2.new(0, data.x, 0, data.y)
+		end
+	end
+end)
+
+local flag2 = false
+local position = nil
+local position2 = nil
+local flag3 = false
+
+local function fn4(arg)
+	local n = arg.Position - position
+
+	if math.abs(n.X) > 3 or math.abs(n.Y) > 3 then
+		flag3 = true
+	end
+
+	textButton3.Position = UDim2.new(position2.X.Scale, position2.X.Offset + n.X, position2.Y.Scale, position2.Y.Offset + n.Y)
+end
+
+textButton3.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		flag2 = true
+		flag3 = false
+		position = input.Position
+		position2 = textButton3.Position
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if flag2 and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		fn4(input)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if flag2 and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+		flag2 = false
+
+		pcall(function()
+			if writefile then
+				writefile("KavalNotifier_BallPos.json", HttpService:JSONEncode({ x = textButton3.Position.X.Offset, y = textButton3.Position.Y.Offset }))
+			end
+		end)
+	end
+end)
+
+textButton3.MouseButton1Click:Connect(function()
+	if not flag3 then
+		fn3()
+	end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+
+	if input.KeyCode.Name == tbl2.ToggleKey then
+		fn3()
+	end
+end)
+
+local frame6 = Instance.new("Frame")
+frame6.Size = UDim2.new(1, -155, 1, -2)
+frame6.Position = UDim2.new(0, 155, 0, 2)
+frame6.BackgroundTransparency = 1
+frame6.Parent = frame
+local frame7 = Instance.new("Frame")
+frame7.Size = UDim2.new(1, -155, 1, -2)
+frame7.Position = UDim2.new(0, 155, 0, 2)
+frame7.BackgroundTransparency = 1
+frame7.Visible = false
+frame7.Parent = frame
+local frame8 = Instance.new("Frame")
+frame8.Size = UDim2.new(1, -155, 1, -2)
+frame8.Position = UDim2.new(0, 155, 0, 2)
+frame8.BackgroundTransparency = 1
+frame8.Visible = false
+frame8.Parent = frame
+local str = "logs"
+local tbl5 = {}
+
+local function createTextButton(arg, arg2, arg3, arg4)
+	local textButton4 = Instance.new("TextButton")
+	textButton4.Size = UDim2.new(1, -20, 0, 36)
+	textButton4.Position = UDim2.new(0, 10, 0, arg3)
+	textButton4.BackgroundColor3 = tbl.BgCard
+	textButton4.BackgroundTransparency = arg4 == "logs" and 0 or 1
+	textButton4.BorderSizePixel = 0
+	textButton4.Text = ""
+	textButton4.AutoButtonColor = false
+	textButton4.Parent = frame2
+	Instance.new("UICorner", textButton4).CornerRadius = UDim.new(0, 6)
+	local frame9 = Instance.new("Frame")
+	frame9.Size = UDim2.new(0, 3, 0.6, 0)
+	frame9.Position = UDim2.new(0, 0, 0.2, 0)
+	frame9.BackgroundColor3 = tbl.Accent1
+	frame9.BackgroundTransparency = arg4 == "logs" and 0 or 1
+	frame9.Parent = textButton4
+	Instance.new("UICorner", frame9).CornerRadius = UDim.new(1, 0)
+	local textLabel3 = Instance.new("TextLabel")
+	textLabel3.Size = UDim2.new(1, -15, 1, 0)
+	textLabel3.Position = UDim2.new(0, 15, 0, 0)
+	textLabel3.BackgroundTransparency = 1
+	textLabel3.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel3.Text = arg .. "  " .. arg2
+	textLabel3.Font = Enum.Font.GothamSemibold
+	textLabel3.TextSize = 12
+	textLabel3.TextColor3 = arg4 == "logs" and tbl.White or tbl.TextDim
+	textLabel3.Parent = textButton4
+	tbl5[arg4] = { btn = textButton4, ind = frame9, lbl = textLabel3 }
+	return textButton4
+end
+
+local v3 = createTextButton("📋", "Logs", 90, "logs")
+local v4 = createTextButton("⚙️", "Settings", 132, "settings")
+local v5 = createTextButton("🛡️", "Whitelist", 174, "whitelist")
+
+local function fn5(arg)
+	str = arg
+	frame6.Visible = arg == "logs"
+	frame7.Visible = arg == "settings"
+	frame8.Visible = arg == "whitelist"
+
+	for k, v6 in pairs(tbl5) do
+		local flag4 = k == arg
+		TweenService:Create(v6.btn, TweenInfo.new(0.2), { BackgroundTransparency = flag4 and 0 or 1 }):Play()
+		TweenService:Create(v6.ind, TweenInfo.new(0.2), { BackgroundTransparency = flag4 and 0 or 1 }):Play()
+		v6.lbl.TextColor3 = flag4 and tbl.White or tbl.TextDim
+	end
+end
+
+v3.MouseButton1Click:Connect(function()
+	fn5("logs")
+end)
+
+v4.MouseButton1Click:Connect(function()
+	fn5("settings")
+end)
+
+v5.MouseButton1Click:Connect(function()
+	fn5("whitelist")
+end)
+
+local textLabel3 = Instance.new("TextLabel")
+textLabel3.Size = UDim2.new(1, 0, 0, 20)
+textLabel3.Position = UDim2.new(0, 0, 1, -25)
+textLabel3.BackgroundTransparency = 1
+textLabel3.Text = tbl2.ToggleKey .. " = Toggle"
+textLabel3.Font = Enum.Font.Gotham
+textLabel3.TextSize = 9
+textLabel3.TextColor3 = tbl.Off
+textLabel3.Parent = frame2
+local scrollingFrame = Instance.new("ScrollingFrame")
+scrollingFrame.Size = UDim2.new(1, 0, 1, 0)
+scrollingFrame.BackgroundTransparency = 1
+scrollingFrame.BorderSizePixel = 0
+scrollingFrame.ScrollBarThickness = 2
+scrollingFrame.ScrollBarImageColor3 = tbl.Off
+scrollingFrame.Parent = frame7
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.Parent = scrollingFrame
+uiListLayout.Padding = UDim.new(0, 8)
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local uiPadding = Instance.new("UIPadding")
+uiPadding.PaddingTop = UDim.new(0, 15)
+uiPadding.PaddingLeft = UDim.new(0, 18)
+uiPadding.PaddingRight = UDim.new(0, 18)
+uiPadding.Parent = scrollingFrame
+
+uiListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, uiListLayout.AbsoluteContentSize.Y + 20)
+end)
+
+local function fn6(parent, text, arg)
+	local frame9 = Instance.new("Frame")
+	frame9.Size = UDim2.new(1, 0, 0, 42)
+	frame9.BackgroundColor3 = tbl.BgCard
+	frame9.Parent = parent
+	Instance.new("UICorner", frame9).CornerRadius = UDim.new(0, 8)
+	local textLabel4 = Instance.new("TextLabel")
+	textLabel4.Size = UDim2.new(1, -65, 1, 0)
+	textLabel4.Position = UDim2.new(0, 14, 0, 0)
+	textLabel4.BackgroundTransparency = 1
+	textLabel4.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel4.Text = text
+	textLabel4.Font = Enum.Font.GothamSemibold
+	textLabel4.TextSize = 13
+	textLabel4.TextColor3 = tbl.White
+	textLabel4.Parent = frame9
+	local textButton4 = Instance.new("TextButton")
+	textButton4.Size = UDim2.new(0, 42, 0, 22)
+	textButton4.Position = UDim2.new(1, -56, 0.5, -11)
+	textButton4.BackgroundColor3 = tbl2[arg] and tbl.Accent1 or tbl.Off
+	textButton4.Text = ""
+	textButton4.Parent = frame9
+	Instance.new("UICorner", textButton4).CornerRadius = UDim.new(1, 0)
+	local frame10 = Instance.new("Frame")
+	frame10.Size = UDim2.new(0, 16, 0, 16)
+	frame10.Position = tbl2[arg] and UDim2.new(1, -19, 0, 3) or UDim2.new(0, 3, 0, 3)
+	frame10.BackgroundColor3 = tbl.White
+	frame10.Parent = textButton4
+	Instance.new("UICorner", frame10).CornerRadius = UDim.new(1, 0)
+
+	textButton4.MouseButton1Click:Connect(function()
+		tbl2[arg] = not tbl2[arg]
+		local v6 = tbl2[arg]
+		TweenService:Create(frame10, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { Position = v6 and UDim2.new(1, -19, 0, 3) or UDim2.new(0, 3, 0, 3) }):Play()
+		TweenService:Create(textButton4, TweenInfo.new(0.15), { BackgroundColor3 = v6 and tbl.Accent1 or tbl.Off }):Play()
+	end)
+end
+
+local function fn7(parent, text, arg)
+	local frame9 = Instance.new("Frame")
+	frame9.Size = UDim2.new(1, 0, 0, 42)
+	frame9.BackgroundColor3 = tbl.BgCard
+	frame9.Parent = parent
+	Instance.new("UICorner", frame9).CornerRadius = UDim.new(0, 8)
+	local textLabel4 = Instance.new("TextLabel")
+	textLabel4.Size = UDim2.new(1, -65, 1, 0)
+	textLabel4.Position = UDim2.new(0, 14, 0, 0)
+	textLabel4.BackgroundTransparency = 1
+	textLabel4.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel4.Text = text
+	textLabel4.Font = Enum.Font.GothamSemibold
+	textLabel4.TextSize = 13
+	textLabel4.TextColor3 = tbl.White
+	textLabel4.Parent = frame9
+	local textBox = Instance.new("TextBox")
+	textBox.Size = UDim2.new(0, 34, 0, 26)
+	textBox.Position = UDim2.new(1, -50, 0.5, -13)
+	textBox.BackgroundColor3 = tbl.Off
+	textBox.Text = tostring(tbl2[arg])
+	textBox.Font = Enum.Font.GothamBold
+	textBox.TextSize = 13
+	textBox.TextColor3 = tbl.White
+	textBox.ClearTextOnFocus = false
+	textBox.Parent = frame9
+	Instance.new("UICorner", textBox).CornerRadius = UDim.new(0, 5)
+
+	textBox.FocusLost:Connect(function()
+		local num = tonumber(textBox.Text)
+
+		if num and num > 0 then
+			tbl2[arg] = math.floor(num)
+		else
+			textBox.Text = tostring(tbl2[arg])
+		end
+	end)
+end
+
+local function fn8(parent, text)
+	local frame9 = Instance.new("Frame")
+	frame9.Size = UDim2.new(1, 0, 0, 42)
+	frame9.BackgroundColor3 = tbl.BgCard
+	frame9.Parent = parent
+	Instance.new("UICorner", frame9).CornerRadius = UDim.new(0, 8)
+	local textLabel4 = Instance.new("TextLabel")
+	textLabel4.Size = UDim2.new(1, -95, 1, 0)
+	textLabel4.Position = UDim2.new(0, 14, 0, 0)
+	textLabel4.BackgroundTransparency = 1
+	textLabel4.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel4.Text = text
+	textLabel4.Font = Enum.Font.GothamSemibold
+	textLabel4.TextSize = 13
+	textLabel4.TextColor3 = tbl.White
+	textLabel4.Parent = frame9
+	local textButton4 = Instance.new("TextButton")
+	textButton4.Size = UDim2.new(0, 80, 0, 26)
+	textButton4.Position = UDim2.new(1, -96, 0.5, -13)
+	textButton4.BackgroundColor3 = tbl.Off
+	textButton4.Text = tostring(tbl2.ToggleKey)
+	textButton4.Font = Enum.Font.GothamBold
+	textButton4.TextSize = 11
+	textButton4.TextColor3 = tbl.Accent2
+	textButton4.Parent = frame9
+	Instance.new("UICorner", textButton4).CornerRadius = UDim.new(0, 5)
+	local connection = nil
+
+	textButton4.MouseButton1Click:Connect(function()
+		textButton4.Text = "..."
+
+		if connection then
+			connection:Disconnect()
+		end
+
+		connection = UserInputService.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Keyboard then
+				tbl2.ToggleKey = input.KeyCode.Name
+				textButton4.Text = input.KeyCode.Name
+				textLabel3.Text = input.KeyCode.Name .. " = Toggle"
+				connection:Disconnect()
+				connection = nil
+			end
+		end)
+	end)
+end
+
+local function fn9(text, parent)
+	local textLabel4 = Instance.new("TextLabel")
+	textLabel4.Size = UDim2.new(1, 0, 0, 20)
+	textLabel4.BackgroundTransparency = 1
+	textLabel4.Text = text
+	textLabel4.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel4.Font = Enum.Font.GothamBold
+	textLabel4.TextSize = 11
+	textLabel4.TextColor3 = tbl.Accent2
+	textLabel4.Parent = parent
+end
+
+local function fn10(parent, text, arg)
+	local frame9 = Instance.new("Frame")
+	frame9.Size = UDim2.new(1, 0, 0, 42)
+	frame9.BackgroundColor3 = tbl.BgCardHover
+	frame9.Parent = parent
+	Instance.new("UICorner", frame9).CornerRadius = UDim.new(0, 8)
+	local textButton4 = Instance.new("TextButton")
+	textButton4.Size = UDim2.new(1, 0, 1, 0)
+	textButton4.BackgroundTransparency = 1
+	textButton4.Text = text
+	textButton4.Font = Enum.Font.GothamBold
+	textButton4.TextSize = 13
+	textButton4.TextColor3 = tbl.White
+	textButton4.Parent = frame9
+
+	textButton4.MouseButton1Click:Connect(function()
+		arg(textButton4)
+	end)
+end
+
+fn9("── UI SETTINGS", scrollingFrame)
+fn8(scrollingFrame, "Toggle GUI Keybind")
+local frame9 = Instance.new("Frame", scrollingFrame)
+frame9.Size = UDim2.new(1, 0, 0, 4)
+frame9.BackgroundTransparency = 1
+fn9("── FILTERS", scrollingFrame)
+fn6(scrollingFrame, "Receive Midlights", "Midlights")
+fn6(scrollingFrame, "Receive Highlights", "Highlights")
+local frame10 = Instance.new("Frame", scrollingFrame)
+frame10.Size = UDim2.new(1, 0, 0, 4)
+frame10.BackgroundTransparency = 1
+fn9("── NOTIFICATIONS", scrollingFrame)
+fn6(scrollingFrame, "Play Sound on New Log", "PlaySound")
+local frame11 = Instance.new("Frame", scrollingFrame)
+frame11.Size = UDim2.new(1, 0, 0, 4)
+frame11.BackgroundTransparency = 1
+fn9("── JOIN SETTINGS", scrollingFrame)
+fn7(scrollingFrame, "Join Spam Retries", "AutoJoinRetries")
+local frame12 = Instance.new("Frame", scrollingFrame)
+frame12.Size = UDim2.new(1, 0, 0, 4)
+frame12.BackgroundTransparency = 1
+fn9("── DATA", scrollingFrame)
+
+fn10(scrollingFrame, "Save All Settings", function(arg)
+	local text = arg.Text
+	arg.Text = "Saving..."
+
+	pcall(function()
+		if writefile then
+			writefile("KavalNotifier_Config.json", HttpService:JSONEncode(tbl2))
+		end
+	end)
+
+	task.delay(0.5, function()
+		arg.Text = "Saved!"
+
+		task.delay(1, function()
+			arg.Text = text
+		end)
+	end)
+end)
+
+local frame13 = Instance.new("Frame")
+frame13.Size = UDim2.new(1, 0, 0, 55)
+frame13.BackgroundTransparency = 1
+frame13.Parent = frame6
+local frame14 = Instance.new("Frame")
+frame14.Size = UDim2.new(1, -95, 0, 36)
+frame14.Position = UDim2.new(0, 15, 0, 10)
+frame14.BackgroundColor3 = tbl.BgCard
+frame14.Parent = frame13
+Instance.new("UICorner", frame14).CornerRadius = UDim.new(0, 8)
+local uiStroke5 = Instance.new("UIStroke")
+uiStroke5.Color = tbl.Off
+uiStroke5.Thickness = 1
+uiStroke5.Parent = frame14
+local frame15 = Instance.new("Frame")
+frame15.Size = UDim2.new(0, 8, 0, 8)
+frame15.Position = UDim2.new(0, 12, 0.5, -4)
+frame15.BackgroundColor3 = tbl.Off
+frame15.Parent = frame14
+Instance.new("UICorner", frame15).CornerRadius = UDim.new(1, 0)
+local textLabel4 = Instance.new("TextLabel")
+textLabel4.Size = UDim2.new(0, 150, 1, 0)
+textLabel4.Position = UDim2.new(0, 28, 0, 0)
+textLabel4.BackgroundTransparency = 1
+textLabel4.Text = "AutoJoin"
+textLabel4.Font = Enum.Font.GothamBold
+textLabel4.TextXAlignment = Enum.TextXAlignment.Left
+textLabel4.TextSize = 13
+textLabel4.TextColor3 = tbl.White
+textLabel4.Parent = frame14
+local textLabel5 = Instance.new("TextLabel")
+textLabel5.Size = UDim2.new(0, 120, 1, 0)
+textLabel5.Position = UDim2.new(0, 170, 0, 0)
+textLabel5.BackgroundTransparency = 1
+textLabel5.Text = ""
+textLabel5.Font = Enum.Font.GothamBold
+textLabel5.TextXAlignment = Enum.TextXAlignment.Left
+textLabel5.TextSize = 12
+textLabel5.TextColor3 = tbl.Green
+textLabel5.Parent = frame14
+local textButton4 = Instance.new("TextButton")
+textButton4.Size = UDim2.new(0, 42, 0, 22)
+textButton4.Position = UDim2.new(1, -56, 0.5, -11)
+textButton4.BackgroundColor3 = tbl2.AutoJoin and tbl.Accent1 or tbl.Off
+textButton4.Text = ""
+textButton4.Parent = frame14
+Instance.new("UICorner", textButton4).CornerRadius = UDim.new(1, 0)
+local frame16 = Instance.new("Frame")
+frame16.Size = UDim2.new(0, 16, 0, 16)
+frame16.Position = tbl2.AutoJoin and UDim2.new(1, -19, 0, 3) or UDim2.new(0, 3, 0, 3)
+frame16.BackgroundColor3 = tbl.White
+frame16.Parent = textButton4
+Instance.new("UICorner", frame16).CornerRadius = UDim.new(1, 0)
+
+local function fn11(arg)
+	TweenService:Create(frame16, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { Position = arg and UDim2.new(1, -19, 0, 3) or UDim2.new(0, 3, 0, 3) }):Play()
+	TweenService:Create(textButton4, TweenInfo.new(0.15), { BackgroundColor3 = arg and tbl.Accent1 or tbl.Off }):Play()
+	TweenService:Create(frame15, TweenInfo.new(0.2), { BackgroundColor3 = arg and tbl.Green or tbl.Off }):Play()
+	TweenService:Create(uiStroke5, TweenInfo.new(0.2), { Color = arg and tbl.Accent1 or tbl.Off }):Play()
+	textLabel5.Text = arg and "Waiting for logs..." or ""
+	textLabel5.TextColor3 = tbl.TextDim
+end
+
+textButton4.MouseButton1Click:Connect(function()
+	tbl2.AutoJoin = not tbl2.AutoJoin
+	fn11(tbl2.AutoJoin)
+end)
+
+local scrollingFrame2 = Instance.new("ScrollingFrame")
+scrollingFrame2.Size = UDim2.new(1, 0, 1, -55)
+scrollingFrame2.Position = UDim2.new(0, 0, 0, 52)
+scrollingFrame2.BackgroundTransparency = 1
+scrollingFrame2.BorderSizePixel = 0
+scrollingFrame2.ScrollBarThickness = 2
+scrollingFrame2.ScrollBarImageColor3 = tbl.Off
+scrollingFrame2.Parent = frame6
+local uiListLayout2 = Instance.new("UIListLayout")
+uiListLayout2.Parent = scrollingFrame2
+uiListLayout2.Padding = UDim.new(0, 6)
+uiListLayout2.SortOrder = Enum.SortOrder.LayoutOrder
+local uiPadding2 = Instance.new("UIPadding")
+uiPadding2.PaddingLeft = UDim.new(0, 15)
+uiPadding2.PaddingRight = UDim.new(0, 15)
+uiPadding2.PaddingTop = UDim.new(0, 4)
+uiPadding2.Parent = scrollingFrame2
+
+uiListLayout2:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	scrollingFrame2.CanvasSize = UDim2.new(0, 0, 0, uiListLayout2.AbsoluteContentSize.Y + 10)
+end)
+
+local frame17 = Instance.new("Frame")
+frame17.Size = UDim2.new(1, 0, 0, 55)
+frame17.BackgroundTransparency = 1
+frame17.Parent = frame8
+local frame18 = Instance.new("Frame")
+frame18.Size = UDim2.new(1, -95, 0, 36)
+frame18.Position = UDim2.new(0, 15, 0, 10)
+frame18.BackgroundColor3 = tbl.BgCard
+frame18.Parent = frame17
+Instance.new("UICorner", frame18).CornerRadius = UDim.new(0, 8)
+local uiStroke6 = Instance.new("UIStroke")
+uiStroke6.Color = tbl.Off
+uiStroke6.Thickness = 1
+uiStroke6.Parent = frame18
+local textLabel6 = Instance.new("TextLabel")
+textLabel6.Size = UDim2.new(0, 90, 1, 0)
+textLabel6.Position = UDim2.new(0, 14, 0, 0)
+textLabel6.BackgroundTransparency = 1
+textLabel6.Text = "Use Whitelist"
+textLabel6.Font = Enum.Font.GothamBold
+textLabel6.TextXAlignment = Enum.TextXAlignment.Left
+textLabel6.TextSize = 12
+textLabel6.TextColor3 = tbl.White
+textLabel6.Parent = frame18
+local textButton5 = Instance.new("TextButton")
+textButton5.Size = UDim2.new(0, 32, 0, 18)
+textButton5.Position = UDim2.new(0, 106, 0.5, -9)
+textButton5.BackgroundColor3 = tbl2.UseWhitelist and tbl.Accent1 or tbl.Off
+textButton5.Text = ""
+textButton5.Parent = frame18
+Instance.new("UICorner", textButton5).CornerRadius = UDim.new(1, 0)
+local frame19 = Instance.new("Frame")
+frame19.Size = UDim2.new(0, 12, 0, 12)
+frame19.Position = tbl2.UseWhitelist and UDim2.new(1, -15, 0, 3) or UDim2.new(0, 3, 0, 3)
+frame19.BackgroundColor3 = tbl.White
+frame19.Parent = textButton5
+Instance.new("UICorner", frame19).CornerRadius = UDim.new(1, 0)
+
+textButton5.MouseButton1Click:Connect(function()
+	tbl2.UseWhitelist = not tbl2.UseWhitelist
+	local useWhitelist = tbl2.UseWhitelist
+	TweenService:Create(frame19, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { Position = useWhitelist and UDim2.new(1, -15, 0, 3) or UDim2.new(0, 3, 0, 3) }):Play()
+	TweenService:Create(textButton5, TweenInfo.new(0.15), { BackgroundColor3 = useWhitelist and tbl.Accent1 or tbl.Off }):Play()
+	TweenService:Create(uiStroke6, TweenInfo.new(0.2), { Color = useWhitelist and tbl.Accent1 or tbl.Off }):Play()
+end)
+
+local textButton6 = Instance.new("TextButton")
+textButton6.Size = UDim2.new(0, 30, 0, 20)
+textButton6.Position = UDim2.new(0, 146, 0.5, -10)
+textButton6.BackgroundColor3 = tbl.GreenDim
+textButton6.Text = "All"
+textButton6.Font = Enum.Font.GothamBold
+textButton6.TextSize = 10
+textButton6.TextColor3 = tbl.Green
+textButton6.Parent = frame18
+Instance.new("UICorner", textButton6).CornerRadius = UDim.new(0, 4)
+local textButton7 = Instance.new("TextButton")
+textButton7.Size = UDim2.new(0, 40, 0, 20)
+textButton7.Position = UDim2.new(0, 180, 0.5, -10)
+textButton7.BackgroundColor3 = Color3.fromRGB(60, 25, 25)
+textButton7.Text = "None"
+textButton7.Font = Enum.Font.GothamBold
+textButton7.TextSize = 10
+textButton7.TextColor3 = tbl.HighlightC
+textButton7.Parent = frame18
+Instance.new("UICorner", textButton7).CornerRadius = UDim.new(0, 4)
+local textBox = Instance.new("TextBox")
+textBox.Size = UDim2.new(0, 95, 0, 24)
+textBox.Position = UDim2.new(1, -105, 0.5, -12)
+textBox.BackgroundColor3 = tbl.BgDark
+textBox.Text = ""
+textBox.PlaceholderText = "Search..."
+textBox.Font = Enum.Font.Gotham
+textBox.TextSize = 11
+textBox.TextColor3 = tbl.White
+textBox.Parent = frame18
+Instance.new("UICorner", textBox).CornerRadius = UDim.new(0, 5)
+local scrollingFrame3 = Instance.new("ScrollingFrame")
+scrollingFrame3.Size = UDim2.new(1, 0, 1, -55)
+scrollingFrame3.Position = UDim2.new(0, 0, 0, 52)
+scrollingFrame3.BackgroundTransparency = 1
+scrollingFrame3.BorderSizePixel = 0
+scrollingFrame3.ScrollBarThickness = 2
+scrollingFrame3.ScrollBarImageColor3 = tbl.Off
+scrollingFrame3.Parent = frame8
+local uiListLayout3 = Instance.new("UIListLayout")
+uiListLayout3.Parent = scrollingFrame3
+uiListLayout3.Padding = UDim.new(0, 5)
+local uiPadding3 = Instance.new("UIPadding")
+uiPadding3.PaddingLeft = UDim.new(0, 15)
+uiPadding3.PaddingRight = UDim.new(0, 15)
+uiPadding3.PaddingTop = UDim.new(0, 4)
+uiPadding3.Parent = scrollingFrame3
+
+uiListLayout3:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	scrollingFrame3.CanvasSize = UDim2.new(0, 0, 0, uiListLayout3.AbsoluteContentSize.Y + 10)
+end)
+
+local tbl6 = {}
+
+local function fn12(text)
+	local frame20 = Instance.new("Frame")
+	frame20.Size = UDim2.new(1, 0, 0, 34)
+	frame20.BackgroundColor3 = tbl.BgCard
+	Instance.new("UICorner", frame20).CornerRadius = UDim.new(0, 6)
+	local textLabel7 = Instance.new("TextLabel")
+	textLabel7.Size = UDim2.new(1, -60, 1, 0)
+	textLabel7.Position = UDim2.new(0, 12, 0, 0)
+	textLabel7.BackgroundTransparency = 1
+	textLabel7.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel7.Text = text
+	textLabel7.Font = Enum.Font.GothamSemibold
+	textLabel7.TextSize = 12
+	textLabel7.TextColor3 = tbl.White
+	textLabel7.Parent = frame20
+	local textButton8 = Instance.new("TextButton")
+	textButton8.Size = UDim2.new(0, 32, 0, 18)
+	textButton8.Position = UDim2.new(1, -44, 0.5, -9)
+	textButton8.BackgroundColor3 = tbl2.Whitelist[text] and tbl.Accent1 or tbl.Off
+	textButton8.Text = ""
+	textButton8.Parent = frame20
+	Instance.new("UICorner", textButton8).CornerRadius = UDim.new(1, 0)
+	local frame21 = Instance.new("Frame")
+	frame21.Size = UDim2.new(0, 12, 0, 12)
+	frame21.Position = tbl2.Whitelist[text] and UDim2.new(1, -15, 0, 3) or UDim2.new(0, 3, 0, 3)
+	frame21.BackgroundColor3 = tbl.White
+	frame21.Parent = textButton8
+	Instance.new("UICorner", frame21).CornerRadius = UDim.new(1, 0)
+
+	local function fn13(backgroundColor3, arg)
+		if arg then
+			TweenService:Create(frame21, TweenInfo.new(0.15), { Position = backgroundColor3 and UDim2.new(1, -15, 0, 3) or UDim2.new(0, 3, 0, 3) }):Play()
+			local v6 = TweenService
+			local create = v6.Create
+			local tweenInfo = TweenInfo.new(0.15)
+			local tbl7 = {}
+			backgroundColor3 = backgroundColor3 and tbl.Accent1
+			tbl7.BackgroundColor3 = backgroundColor3 or tbl.Off
+			create(v6, textButton8, tweenInfo, tbl7):Play()
+		else
+			frame21.Position = backgroundColor3 and UDim2.new(1, -15, 0, 3) or UDim2.new(0, 3, 0, 3)
+			textButton8.BackgroundColor3 = backgroundColor3 and tbl.Accent1 or tbl.Off
+		end
+	end
+
+	textButton8.MouseButton1Click:Connect(function()
+		tbl2.Whitelist[text] = not tbl2.Whitelist[text]
+		fn13(tbl2.Whitelist[text], true)
+	end)
+
+	frame20.Parent = scrollingFrame3
+	return { frame = frame20, name = string.lower(text), rawName = text, update = fn13 }
+end
+
+for _, v6 in ipairs(tbl3) do
+	local insert = table.insert
+	local v7 = fn12(v6)
+	insert(tbl6, v7)
+end
+
+textBox.Changed:Connect(function(arg)
+	if arg == "Text" then
+		local v6 = string.lower(textBox.Text)
+
+		for _, v7 in ipairs(tbl6) do
+			v7.frame.Visible = (v6 == "" or string.find(v7.name, v6, 1, true)) and true or false
+		end
+	end
+end)
+
+textButton6.MouseButton1Click:Connect(function()
+	for _, v6 in ipairs(tbl6) do
+		if v6.frame.Visible then
+			tbl2.Whitelist[v6.rawName] = true
+			v6.update(true, true)
+		end
+	end
+end)
+
+textButton7.MouseButton1Click:Connect(function()
+	for _, v6 in ipairs(tbl6) do
+		if v6.frame.Visible then
+			tbl2.Whitelist[v6.rawName] = false
+			v6.update(false, true)
+		end
+	end
+end)
+
+local flag4 = false
+local n = 0
+local n2 = 5
+
+local function fn13(arg)
+	if flag4 then
+		return
+	end
+
+	if os.time() - n < n2 then
+		return
+	end
+	flag4 = true
+	n = os.time()
+	textLabel5.Text = "Joining..."
+	textLabel5.TextColor3 = tbl.Green
+
+	task.spawn(function()
+		local tbl7 = { "Joining.", "Joining..", "Joining..." }
+		local n3 = 1
+
+		while flag4 and _G.KavalRunning do
+			textLabel5.Text = tbl7[n3]
+			n3 = n3 % 3 + 1
+			task.wait(0.4)
+		end
+	end)
+
+	task.spawn(function()
+		local n3 = tonumber(tbl2.AutoJoinRetries) or 3
+
+		for i = 1, n3 do
+			if _G.KavalRunning then
+				pcall(function()
+					TeleportService:TeleportToPlaceInstance(game.PlaceId, arg, localPlayer)
+				end)
+
+				task.wait(3)
+				continue
+			end
+
+			break
+		end
+
+		flag4 = false
+
+		if tbl2.AutoJoin then
+			textLabel5.Text = "Waiting for logs..."
+			textLabel5.TextColor3 = tbl.TextDim
+		else
+			textLabel5.Text = ""
+		end
+	end)
+end
+
+local n3 = 180
+local tbl7 = {}
+
+local function fn14(arg)
+	local flag5 = arg.tier == "Highlights"
+	local now = os.time()
+	if arg.timestamp and now - arg.timestamp > n3 then
+		return
+	end
+	local frame20 = Instance.new("Frame")
+	frame20.Size = UDim2.new(1, 0, 0, 52)
+	frame20.BackgroundColor3 = tbl.BgCard
+	frame20.LayoutOrder = -now
+	Instance.new("UICorner", frame20).CornerRadius = UDim.new(0, 8)
+	local frame21 = Instance.new("Frame")
+	frame21.Size = UDim2.new(0, 3, 0.65, 0)
+	frame21.Position = UDim2.new(0, 0, 0.175, 0)
+	frame21.BackgroundColor3 = flag5 and tbl.HighlightC or tbl.MidlightC
+	frame21.Parent = frame20
+	Instance.new("UICorner", frame21).CornerRadius = UDim.new(1, 0)
+
+	if flag5 then
+		local uiStroke7 = Instance.new("UIStroke")
+		uiStroke7.Thickness = 1
+		uiStroke7.Color = tbl.HighlightC
+		uiStroke7.Transparency = 0.6
+		uiStroke7.Parent = frame20
+	end
+
+	local textLabel7 = Instance.new("TextLabel")
+	textLabel7.Size = UDim2.new(1, -135, 0, 18)
+	textLabel7.Position = UDim2.new(0, 12, 0, 7)
+	textLabel7.BackgroundTransparency = 1
+	textLabel7.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel7.TextTruncate = Enum.TextTruncate.AtEnd
+	textLabel7.Text = arg.name or "Unknown"
+	textLabel7.Font = Enum.Font.GothamBold
+	textLabel7.TextSize = 13
+	textLabel7.TextColor3 = flag5 and Color3.fromRGB(255, 200, 200) or tbl.White
+	textLabel7.Parent = frame20
+	local textLabel8 = Instance.new("TextLabel")
+	textLabel8.Size = UDim2.new(1, -135, 0, 14)
+	textLabel8.Position = UDim2.new(0, 12, 0, 28)
+	textLabel8.BackgroundTransparency = 1
+	textLabel8.TextXAlignment = Enum.TextXAlignment.Left
+	local str2 = fn2(arg.value or 0) .. "  ·  " .. (arg.tier or "")
+	textLabel8.Text = str2 .. "  •  0s ago"
+	textLabel8.Font = Enum.Font.Gotham
+	textLabel8.TextSize = 11
+	textLabel8.TextColor3 = flag5 and tbl.HighlightC or tbl.MidlightC
+	textLabel8.Parent = frame20
+	table.insert(tbl7, { label = textLabel8, baseStr = str2, ts = arg.timestamp or now, card = frame20 })
+	local textButton8 = Instance.new("TextButton")
+	textButton8.Size = UDim2.new(0, 48, 0, 26)
+	textButton8.Position = UDim2.new(1, -110, 0.5, -13)
+	textButton8.BackgroundColor3 = tbl.Green
+	textButton8.Text = "JOIN"
+	textButton8.Font = Enum.Font.GothamBold
+	textButton8.TextSize = 10
+	textButton8.TextColor3 = tbl.White
+	textButton8.Parent = frame20
+	Instance.new("UICorner", textButton8).CornerRadius = UDim.new(0, 5)
+	local textButton9 = Instance.new("TextButton")
+	textButton9.Size = UDim2.new(0, 48, 0, 26)
+	textButton9.Position = UDim2.new(1, -58, 0.5, -13)
+	textButton9.BackgroundColor3 = tbl.Red
+	textButton9.Text = "SPAM"
+	textButton9.Font = Enum.Font.GothamBold
+	textButton9.TextSize = 10
+	textButton9.TextColor3 = tbl.White
+	textButton9.Parent = frame20
+	Instance.new("UICorner", textButton9).CornerRadius = UDim.new(0, 5)
+	frame20.Parent = scrollingFrame2
+
+	textButton8.MouseButton1Click:Connect(function()
+		if arg.job_id then
+			pcall(function()
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, arg.job_id, localPlayer)
+			end)
+
+			textButton8.Text = "..."
+			textButton8.BackgroundColor3 = tbl.Accent1
+
+			task.delay(1.5, function()
+				textButton8.Text = "JOIN"
+				textButton8.BackgroundColor3 = tbl.Green
+			end)
+		end
+	end)
+
+	textButton9.MouseButton1Click:Connect(function()
+		if arg.job_id then
+			fn13(arg.job_id)
+		end
+	end)
+end
+
+local frame20 = Instance.new("Frame")
+frame20.Name = "NotifContainer"
+frame20.Size = UDim2.new(0, 260, 1, -40)
+frame20.Position = UDim2.new(1, -280, 0, 20)
+frame20.BackgroundTransparency = 1
+frame20.Parent = screenGui
+local uiListLayout4 = Instance.new("UIListLayout")
+uiListLayout4.Parent = frame20
+uiListLayout4.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout4.VerticalAlignment = Enum.VerticalAlignment.Bottom
+uiListLayout4.Padding = UDim.new(0, 8)
+
+local function fn15(arg)
+	fn()
+	local flag5 = arg.tier == "Highlights"
+	local textButton8 = Instance.new("TextButton")
+	textButton8.Size = UDim2.new(1, 0, 0, 52)
+	textButton8.BackgroundColor3 = tbl.BgMid
+	textButton8.BackgroundTransparency = 1
+	textButton8.Text = ""
+	textButton8.AutoButtonColor = false
+	Instance.new("UICorner", textButton8).CornerRadius = UDim.new(0, 8)
+	local uiStroke7 = Instance.new("UIStroke")
+	uiStroke7.Thickness = 1
+	uiStroke7.Color = flag5 and tbl.HighlightC or tbl.MidlightC
+	uiStroke7.Transparency = 1
+	uiStroke7.Parent = textButton8
+	local frame21 = Instance.new("Frame")
+	frame21.Size = UDim2.new(0, 3, 0.65, 0)
+	frame21.Position = UDim2.new(0, 6, 0.175, 0)
+	frame21.BackgroundColor3 = flag5 and tbl.HighlightC or tbl.MidlightC
+	frame21.BackgroundTransparency = 1
+	frame21.Parent = textButton8
+	Instance.new("UICorner", frame21).CornerRadius = UDim.new(1, 0)
+	local textLabel7 = Instance.new("TextLabel")
+	textLabel7.Size = UDim2.new(1, -85, 0, 16)
+	textLabel7.Position = UDim2.new(0, 16, 0, 8)
+	textLabel7.BackgroundTransparency = 1
+	textLabel7.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel7.TextTruncate = Enum.TextTruncate.AtEnd
+	textLabel7.Text = arg.name or "Unknown"
+	textLabel7.Font = Enum.Font.GothamBold
+	textLabel7.TextSize = 12
+	textLabel7.TextColor3 = tbl.White
+	textLabel7.TextTransparency = 1
+	textLabel7.Parent = textButton8
+	textLabel7.ZIndex = 2
+	local textLabel8 = Instance.new("TextLabel")
+	textLabel8.Size = UDim2.new(1, -85, 0, 14)
+	textLabel8.Position = UDim2.new(0, 16, 0, 27)
+	textLabel8.BackgroundTransparency = 1
+	textLabel8.TextXAlignment = Enum.TextXAlignment.Left
+	local n4 = math.floor(os.time())
+	local n5 = math.max(0, n4 - (arg.timestamp or n4))
+	local str2 = n5 < 60 and n5 .. "s ago" or math.floor(n5 / 60) .. "m ago"
+	textLabel8.Text = fn2(arg.value or 0) .. "  ·  " .. (arg.tier or "") .. "  •  " .. str2
+	textLabel8.Font = Enum.Font.Gotham
+	textLabel8.TextSize = 10
+	textLabel8.TextColor3 = tbl.TextDim
+	textLabel8.TextTransparency = 1
+	textLabel8.Parent = textButton8
+	textLabel8.ZIndex = 2
+	local textButton9 = Instance.new("TextButton")
+	textButton9.Size = UDim2.new(0, 44, 0, 22)
+	textButton9.Position = UDim2.new(1, -54, 0.5, -11)
+	textButton9.BackgroundColor3 = tbl.Accent1
+	textButton9.BackgroundTransparency = 1
+	textButton9.Text = "JOIN"
+	textButton9.Font = Enum.Font.GothamBold
+	textButton9.TextSize = 10
+	textButton9.TextColor3 = tbl.Accent2
+	textButton9.TextTransparency = 1
+	textButton9.AutoButtonColor = false
+	textButton9.Parent = textButton8
+	textButton9.ZIndex = 2
+	Instance.new("UICorner", textButton9).CornerRadius = UDim.new(0, 5)
+	textButton8.Parent = frame20
+
+	local function fn16()
+		if arg.job_id then
+			pcall(function()
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, arg.job_id, localPlayer)
+			end)
+
+			textButton9.Text = "..."
+		end
+	end
+
+	textButton8.MouseButton1Click:Connect(fn16)
+	textButton9.MouseButton1Click:Connect(fn16)
+	TweenService:Create(textButton8, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { BackgroundTransparency = 0.05 }):Play()
+	TweenService:Create(uiStroke7, TweenInfo.new(0.35), { Transparency = 0.6 }):Play()
+	TweenService:Create(frame21, TweenInfo.new(0.35), { BackgroundTransparency = 0 }):Play()
+	TweenService:Create(textLabel7, TweenInfo.new(0.35), { TextTransparency = 0 }):Play()
+	TweenService:Create(textLabel8, TweenInfo.new(0.35), { TextTransparency = 0 }):Play()
+	TweenService:Create(textButton9, TweenInfo.new(0.35), { TextTransparency = 0, BackgroundTransparency = 0.15 }):Play()
+
+	task.delay(4.5, function()
+		if textButton8 and textButton8.Parent then
+			TweenService:Create(textButton8, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
+			TweenService:Create(uiStroke7, TweenInfo.new(0.3), { Transparency = 1 }):Play()
+			TweenService:Create(frame21, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
+			TweenService:Create(textLabel7, TweenInfo.new(0.3), { TextTransparency = 1 }):Play()
+			TweenService:Create(textLabel8, TweenInfo.new(0.3), { TextTransparency = 1 }):Play()
+			local tween = TweenService:Create(textButton9, TweenInfo.new(0.3), { TextTransparency = 1, BackgroundTransparency = 1 })
+			tween:Play()
+
+			tween.Completed:Connect(function()
+				textButton8:Destroy()
+			end)
+		end
+	end)
+end
+
+espStrokes = espStrokes or {}
+
+local function fn16(character)
+	task.spawn(function()
+		local head = character:WaitForChild("Head", 10)
+		if not head then
+			return
+		end
+
+		if head:FindFirstChild("KAVAL_USER_ESP") then
+			head.KAVAL_USER_ESP:Destroy()
+		end
+
+		local billboardGui = Instance.new("BillboardGui")
+		billboardGui.Name = "KAVAL_USER_ESP"
+		billboardGui.Size = UDim2.new(0, 130, 0, 30)
+		billboardGui.StudsOffset = Vector3.new(0, 2.8, 0)
+		billboardGui.AlwaysOnTop = true
+		billboardGui.Parent = head
+		local frame21 = Instance.new("Frame")
+		frame21.Size = UDim2.new(1, 0, 1, 0)
+		frame21.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
+		frame21.BackgroundTransparency = 0.25
+		frame21.Parent = billboardGui
+		Instance.new("UICorner", frame21).CornerRadius = UDim.new(0, 6)
+		local uiStroke7 = Instance.new("UIStroke")
+		uiStroke7.Thickness = 1.5
+		uiStroke7.Color = tbl.Accent1
+		uiStroke7.Parent = frame21
+		table.insert(espStrokes, uiStroke7)
+		local textLabel7 = Instance.new("TextLabel")
+		textLabel7.Size = UDim2.new(1, 0, 1, 0)
+		textLabel7.BackgroundTransparency = 1
+		textLabel7.Text = "KAVAL USER"
+		textLabel7.Font = Enum.Font.GothamBlack
+		textLabel7.TextSize = 13
+		textLabel7.TextColor3 = tbl.White
+		textLabel7.Parent = frame21
+	end)
+end
+
+if localPlayer.Character then
+	fn16(localPlayer.Character)
+end
+
+localPlayer.CharacterAdded:Connect(fn16)
+
+task.spawn(function()
+	local str2 = "https://api.npoint.io/12643e6a6f4acb837a3e"
+	local str3 = tostring(localPlayer.UserId)
+
+	local function fn17(arg)
+		if syn and syn.request then
+			return syn.request(arg)
+		end
+
+		if request then
+			return request(arg)
+		end
+
+		if http_request then
+			return http_request(arg)
+		end
+		return { Body = game:HttpGet(arg.Url, true) }
+	end
+
+	print("[KAVAL ESP] Sync Thread Starting...")
+
+	while _G.KavalRunning ~= false do
+		pcall(function()
+			local v6 = fn17({ Url = str2, Method = "GET" })
+			if not v6 or not v6.Body then
+				return
+			end
+			local data = HttpService:JSONDecode(v6.Body)
+
+			if type(data) ~= "table" then
+				data = {}
+			end
+
+			if type(data.users) ~= "table" then
+				data.users = {}
+			end
+
+			if not data.users[str3] then
+				data.users[str3] = true
+
+				fn17({
+					Url = str2,
+					Method = "POST",
+					Headers = { ["Content-Type"] = "application/json" },
+					Body = HttpService:JSONEncode(data),
+				})
+			end
+
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= localPlayer and data.users[tostring(player.UserId)] then
+					if player.Character and not player.Character:FindFirstChild("KAVAL_USER_ESP", true) then
+						fn16(player.Character)
+					end
+				end
+			end
+		end)
+
+		task.wait(10)
+	end
+end)
+
+_G.KavalRunning = true
+
+task.spawn(function()
+	while _G.KavalRunning do
+		local now = tick()
+		local n4 = (math.sin(now * 0.8) + 1) / 2
+		local shade = math.floor(35 + n4 * 95)
+		local color2 = Color3.fromRGB(shade, shade, shade)
+		uiGradient.Rotation = now * 60 % 360
+		local v6 = uiGradient
+		local colorSequence2 = ColorSequence.new
+		local tbl8 = {}
+		local v7 = ColorSequenceKeypoint.new(0, color2)
+		local v8 = ColorSequenceKeypoint.new(0.5, Color3.fromRGB(190, 190, 190))
+		local new2 = ColorSequenceKeypoint.new
+		tbl8[1] = v7
+		tbl8[2] = v8
+
+		do
+			local values = table.pack(new2(1, color2))
+			table.move(values, 1, values.n, 3, tbl8)
+		end
+
+		v6.Color = colorSequence2(tbl8)
+		textLabel.TextColor3 = color2
+
+		for k, v9 in pairs(tbl5) do
+			if k == str then
+				v9.ind.BackgroundColor3 = color2
+			end
+		end
+
+		for _, v9 in ipairs(espStrokes) do
+			if v9 and v9.Parent then
+				v9.Color = color2
+			end
+		end
+
+		if tbl2.AutoJoin then
+			frame15.BackgroundColor3 = color2
+		end
+
+		if textButton3 then
+			textButton3.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+
+		task.wait(0.04)
+	end
+end)
+
+local str2 = "https://autojoiner2-2d181-default-rtdb.firebaseio.com/logs.json?orderBy=%22%24key%22&limitToLast=30"
+local tbl8 = {}
+local flag5 = true
+local tbl9 = {}
+local n4 = 180
+
+local function fn17(arg)
+	local now = os.time()
+	local tbl10 = {}
+
+	for _, v6 in ipairs(arg) do
+		if not tbl8[v6.id] then
+			tbl8[v6.id] = true
+			table.insert(tbl10, v6)
+		end
+	end
+
+	table.sort(tbl10, function(arg2, arg3)
+		return arg2.timestamp > arg3.timestamp
+	end)
+
+	if flag5 then
+		flag5 = false
+		local n5 = 0
+
+		for _, v6 in ipairs(tbl10) do
+			if not (n5 >= 50) then
+				fn14(v6)
+				n5 += 1
+				continue
+			end
+
+			break
+		end
+
+		return
+	end
+
+	for _, v6 in ipairs(tbl10) do
+		local jobId = v6.job_id
+		local v7 = jobId and tbl9[jobId]
+
+		if v7 and now - v7 < n4 then
+			fn14(v6)
+		else
+			if jobId then
+				tbl9[jobId] = now
+			end
+
+			fn14(v6)
+
+			if tbl2[v6.tier] then
+				fn15(v6)
+
+				if tbl2.AutoJoin and v6.job_id then
+					local flag6 = true
+
+					if tbl2.UseWhitelist then
+						if not v6.base_name or not tbl2.Whitelist[v6.base_name] then
+							flag6 = false
+						end
+					end
+
+					if flag6 then
+						fn13(v6.job_id)
+					end
+				end
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while _G.KavalRunning do
+		pcall(function()
+			local str3 = str2 .. "&t=" .. tostring(tick())
+			local tbl10 = { ["Cache-Control"] = "no-cache", ["User-Agent"] = "Roblox/KavalUI" }
+			local tbl11
+
+			if syn and syn.request then
+				tbl11 = syn.request({ Url = str3, Method = "GET", Headers = tbl10 })
+			elseif request then
+				tbl11 = request({ Url = str3, Method = "GET", Headers = tbl10 })
+			elseif http_request then
+				tbl11 = http_request({ Url = str3, Method = "GET", Headers = tbl10 })
+			else
+				tbl11 = { Body = game:HttpGet(str3, true) }
+			end
+
+			if tbl11 and tbl11.Body then
+				local data = HttpService:JSONDecode(tbl11.Body)
+
+				if data and type(data) == "table" then
+					local tbl12 = {}
+
+					for k, v6 in pairs(data) do
+						if type(v6) == "table" and v6.jobId then
+							local n5 = tonumber(v6.numValue) or 0
+
+							table.insert(tbl12, {
+								id = k,
+								job_id = v6.jobId,
+								name = v6.name ~= "" and v6.name or "Unknown",
+								base_name = v6.name ~= "" and v6.name or "Unknown",
+								value = n5,
+								tier = n5 >= 100000000 and "Highlights" or "Midlights",
+								timestamp = os.time(),
+								players = v6.players or "",
+								place_id = v6.placeId,
+							})
+						end
+					end
+
+					if #tbl12 > 0 then
+						fn17(tbl12)
+					end
+				end
+			end
+		end)
+
+		task.wait(2)
+	end
+end)
+
+task.spawn(function()
+	while _G.KavalRunning do
+		local n5 = math.floor(os.time())
+
+		for i = #tbl7, 1, -1 do
+			local v6 = tbl7[i]
+
+			if not v6.card or not v6.card.Parent then
+				table.remove(tbl7, i)
+			else
+				local n6 = n5 - v6.ts
+
+				if n3 < n6 then
+					if v6.card and v6.card.Parent then
+						v6.card:Destroy()
+					end
+
+					table.remove(tbl7, i)
+				else
+					local str3
+
+					if n6 < 60 then
+						str3 = n6 .. "s ago"
+					elseif n6 < 3600 then
+						str3 = math.floor(n6 / 60) .. "m ago"
+					else
+						str3 = math.floor(n6 / 3600) .. "h ago"
+					end
+
+					v6.label.Text = v6.baseStr .. "  •  " .. str3
+				end
+			end
+		end
+
+		task.wait(1)
+	end
+end)
