@@ -14,6 +14,78 @@ if placeId ~= 99606176102979 and placeId ~= 109983668079237 then
 	return
 end
 
+
+-- TELEPORT HANDLER: recover the UI when a selected public server has disappeared.
+-- Roblox cannot join a server that is already closed/unavailable; this unlocks the UI
+-- so another server can be selected instead of leaving the script stuck on "Joining...".
+local teleportBusy = false
+local teleportAttemptId = 0
+local teleportResetters = {}
+local flag4 = false
+local textLabel5
+local localPlayer
+
+local function resetTeleportState(reason)
+    teleportBusy = false
+    flag4 = false
+    if textLabel5 then
+        textLabel5.Text = "Waiting for logs..."
+    end
+    for _, resetter in ipairs(teleportResetters) do
+        pcall(resetter)
+    end
+    if reason then
+        warn("[KAVAL TELEPORT] Teleport failed: " .. tostring(reason) .. ". You can try another server.")
+    end
+end
+
+local function teleportToLoggedServer(jobId, targetPlaceId)
+	if type(jobId) ~= "string" or jobId == "" then
+		warn("[KAVAL TELEPORT] Missing or invalid server JobId.")
+		return false
+	end
+
+	local destinationPlaceId = tonumber(targetPlaceId) or game.PlaceId
+	if not destinationPlaceId or destinationPlaceId <= 0 then
+		warn("[KAVAL TELEPORT] Missing or invalid PlaceId.")
+		return false
+	end
+
+	if teleportBusy then
+		return nil
+	end
+
+	teleportBusy = true
+	teleportAttemptId += 1
+	local thisAttempt = teleportAttemptId
+	local ok, err = pcall(function()
+		TeleportService:TeleportToPlaceInstance(destinationPlaceId, jobId, localPlayer)
+	end)
+
+	if not ok then
+		resetTeleportState(err)
+		return false
+	end
+
+	-- Some executor/client combinations do not deliver TeleportInitFailed reliably.
+	-- Release the lock after a timeout so an unavailable server cannot leave the UI loading forever.
+	task.delay(20, function()
+		if teleportBusy and teleportAttemptId == thisAttempt then
+			resetTeleportState("request timed out or the server is no longer available")
+		end
+	end)
+
+	return true
+end
+
+TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+	if player == localPlayer then
+		resetTeleportState(tostring(teleportResult) .. "): " .. tostring(errorMessage))
+	end
+end)
+
+-- On failure, unlock JOIN buttons and stop any "Joining..." animation.
+
 if CoreGui:FindFirstChild("KavalNotifier_GUI") then
 	CoreGui.KavalNotifier_GUI:Destroy()
 end
@@ -22,7 +94,7 @@ if SoundService:FindFirstChild("KavalNotifSound") then
 	SoundService.KavalNotifSound:Destroy()
 end
 
-local localPlayer = Players.LocalPlayer
+localPlayer = Players.LocalPlayer
 
 if localPlayer.Character then
 	local head = localPlayer.Character:FindFirstChild("Head")
@@ -948,7 +1020,7 @@ textLabel4.TextXAlignment = Enum.TextXAlignment.Left
 textLabel4.TextSize = 13
 textLabel4.TextColor3 = tbl.White
 textLabel4.Parent = frame14
-local textLabel5 = Instance.new("TextLabel")
+textLabel5 = Instance.new("TextLabel")
 textLabel5.Size = UDim2.new(0, 120, 1, 0)
 textLabel5.Position = UDim2.new(0, 170, 0, 0)
 textLabel5.BackgroundTransparency = 1
@@ -1196,7 +1268,7 @@ textButton7.MouseButton1Click:Connect(function()
 	end
 end)
 
-local flag4 = false
+flag4 = false
 local n = 0
 local n2 = 5
 
@@ -1229,15 +1301,16 @@ local function fn13(arg)
 
 		for i = 1, n3 do
 			if _G.KavalRunning then
-				pcall(function()
-					TeleportService:TeleportToPlaceInstance(game.PlaceId, arg, localPlayer)
-				end)
+				local requested = teleportToLoggedServer(arg, game.PlaceId)
+				if requested then
+					-- Roblox will report asynchronous failures through TeleportInitFailed.
+					break
+				end
 
 				task.wait(3)
-				continue
+			else
+				break
 			end
-
-			break
 		end
 
 		flag4 = false
@@ -1325,19 +1398,36 @@ local function fn14(arg)
 	Instance.new("UICorner", textButton9).CornerRadius = UDim.new(0, 5)
 	frame20.Parent = scrollingFrame2
 
+	local originalJoinText = textButton8.Text
+	local originalJoinColor = textButton8.BackgroundColor3
+	local originalInnerJoinText = textButton9.Text
+	local function resetThisJoinButton()
+		textButton8.Text = originalJoinText
+		textButton8.BackgroundColor3 = originalJoinColor
+		textButton8.Active = true
+		textButton8.AutoButtonColor = true
+		textButton9.Text = originalInnerJoinText
+		textButton9.Active = true
+		textButton9.AutoButtonColor = true
+	end
+	table.insert(teleportResetters, resetThisJoinButton)
+
 	textButton8.MouseButton1Click:Connect(function()
-		if arg.job_id then
-			pcall(function()
-				TeleportService:TeleportToPlaceInstance(game.PlaceId, arg.job_id, localPlayer)
-			end)
+		if arg.job_id and not teleportBusy then
+			local requested = teleportToLoggedServer(arg.job_id, game.PlaceId)
 
-			textButton8.Text = "..."
-			textButton8.BackgroundColor3 = tbl.Accent1
-
-			task.delay(1.5, function()
-				textButton8.Text = "JOIN"
-				textButton8.BackgroundColor3 = tbl.Green
-			end)
+			if requested then
+				textButton8.Text = "..."
+				textButton8.BackgroundColor3 = tbl.Accent1
+				textButton8.Active = false
+				textButton8.AutoButtonColor = false
+				textButton9.Text = "..."
+				textButton9.Active = false
+				textButton9.AutoButtonColor = false
+			elseif requested == false then
+				textButton8.Text = originalJoinText
+				textButton8.BackgroundColor3 = originalJoinColor
+			end
 		end
 	end)
 
@@ -1426,13 +1516,32 @@ local function fn15(arg)
 	Instance.new("UICorner", textButton9).CornerRadius = UDim.new(0, 5)
 	textButton8.Parent = frame20
 
-	local function fn16()
-		if arg.job_id then
-			pcall(function()
-				TeleportService:TeleportToPlaceInstance(game.PlaceId, arg.job_id, localPlayer)
-			end)
+	local originalJoinText2 = textButton8.Text
+	local originalJoinColor2 = textButton8.BackgroundColor3
+	local originalInnerJoinText2 = textButton9.Text
+	local function resetThisJoinButton2()
+		textButton8.Text = originalJoinText2
+		textButton8.BackgroundColor3 = originalJoinColor2
+		textButton8.Active = true
+		textButton8.AutoButtonColor = true
+		textButton9.Text = originalInnerJoinText2
+		textButton9.Active = true
+		textButton9.AutoButtonColor = true
+	end
+	table.insert(teleportResetters, resetThisJoinButton2)
 
-			textButton9.Text = "..."
+	local function fn16()
+		if arg.job_id and not teleportBusy then
+			local requested = teleportToLoggedServer(arg.job_id, game.PlaceId)
+			if requested then
+				textButton8.Active = false
+				textButton8.AutoButtonColor = false
+				textButton9.Active = false
+				textButton9.AutoButtonColor = false
+				textButton9.Text = "..."
+			elseif requested == false then
+				textButton9.Text = originalInnerJoinText2
+			end
 		end
 	end
 
